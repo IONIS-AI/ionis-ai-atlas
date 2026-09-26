@@ -8,7 +8,9 @@ set -euo pipefail
 cd "$(dirname "$0")/../db/load"
 FILES=(adif_tier.py 10-adif_schema.sql adif_upstream_sha256.json)
 if [[ "${1:-}" == "--check" ]]; then
-  tail -n +2 SOURCE | sha256sum --check --quiet && echo "db/load matches $(head -1 SOURCE)"; exit
+  # sha256sum on Linux, shasum on macOS: same checksum-file format either way.
+  if command -v sha256sum >/dev/null; then sum=(sha256sum); else sum=(shasum -a 256); fi
+  tail -n +2 SOURCE | "${sum[@]}" --check --status && echo "db/load matches $(head -1 SOURCE)"; exit
 fi
 tag="${1:?usage: $0 <ionis-core tag> | --check}"
 core="${IONIS_CORE:-${WORKSPACE_ROOT:-$HOME/workspace}/ionis-ai/ionis-core}"

@@ -22,6 +22,17 @@ Images on docker.io: `ki7mt/ionis-ai-atlas-dev` and `ki7mt/ionis-ai-atlas-db-dev
 ADIF 3.1.6 and 3.1.7 (current 3.1.7), loaded from adif.org's published files and verified against
 their SHA-256 at image build. The database image build fails if the audit does.
 
+## Run from a clone (Docker Desktop)
+
+To run the current `main` without the published images, build them locally:
+
+```
+git pull
+make dev          # docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+```
+then open <http://localhost:8080>. Repeat both commands after each pull. `make dev-down` stops the stack.
+The development overlay runs the database without its volume, so every rebuild serves the new data.
+
 ## Build and test
 
 ```
