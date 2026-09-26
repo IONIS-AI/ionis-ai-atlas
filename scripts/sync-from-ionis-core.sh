@@ -7,8 +7,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/../db/load"
 FILES=(adif_tier.py 10-adif_schema.sql adif_upstream_sha256.json)
-# sha256sum on Linux, shasum on macOS: same checksum-file format either way.
-if command -v sha256sum >/dev/null; then sum=(sha256sum); else sum=(shasum -a 256); fi
+# GNU sha256sum on Linux, shasum on macOS: same checksum-file format either way. Probe the
+# implementation, not the name: macOS ships its own sha256sum, which has no --check.
+if sha256sum --version 2>/dev/null | grep -q coreutils; then sum=(sha256sum); else sum=(shasum -a 256); fi
 if [[ "${1:-}" == "--check" ]]; then
   tail -n +2 SOURCE | "${sum[@]}" --check --status && echo "db/load matches $(head -1 SOURCE)"; exit
 fi
