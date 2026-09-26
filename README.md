@@ -13,8 +13,9 @@ docker compose up          # or: podman compose up
 ```
 then open <http://localhost:8080>. The API's interactive documentation is at <http://localhost:8080/api/docs>.
 
-Images on docker.io: `ki7mt/ionis-ai-atlas-dev` and `ki7mt/ionis-ai-atlas-db-dev` (development);
-`ionis-ai/ionis-ai-atlas` and `ionis-ai/ionis-ai-atlas-db` once the production account exists.
+Images on docker.io, all under `ki7mt`: `ki7mt/ionis-ai-atlas` (the app), `ki7mt/ionis-ai-atlas-db`
+(the engine) and one `ki7mt/ionis-ai-atlas-data-<dataset>` per dataset. Development images carry a
+`-dev` suffix and are private.
 
 ## What is in it today
 
