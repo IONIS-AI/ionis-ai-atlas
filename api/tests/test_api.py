@@ -18,7 +18,7 @@ pytestmark = pytest.mark.skipif(not DB, reason="ATLAS_DB_URL not set: needs a ru
 def client():
     from atlas_api.main import app
 
-    with TestClient(app) as c:
+    with TestClient(app, base_url="http://localhost") as c:  # the Host allowlist refuses "testserver"
         yield c
 
 
