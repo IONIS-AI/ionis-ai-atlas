@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .models import (Band, Contest, Current, DataType, DxccEntity, Enumeration, EnumerationSummary, Field,
                      Health, Mode, Release)
@@ -48,6 +48,38 @@ app = FastAPI(
     redoc_url=None,  # one place to look
     openapi_url=f"{API}/openapi.json",
 )
+
+# --- The browser boundary (Atlas SPEC.md, "Security") -------------------------------------------
+# The threat to a local app is a hostile page in the user's own browser reaching localhost:8080.
+# Answering only localhost names closes DNS rebinding: a page on evil.example that re-points its
+# name at 127.0.0.1 still sends "Host: evil.example", and is refused. Serving any other name means
+# serving a network, which needs HTTPS; that arrives with TLS, not before.
+ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+
+# Everything is self-hosted, so the policy allows Atlas's own origin and nothing else. Inline
+# styles stay allowed for the component libraries; inline and injected scripts do not.
+CSP = "; ".join([
+    "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:", "font-src 'self'", "connect-src 'self'", "object-src 'none'",
+    "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'",
+])
+SECURITY_HEADERS = {
+    "Content-Security-Policy": CSP,
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+}
+
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+
+
+@app.middleware("http")  # added after the host check, so it wraps it: refusals carry the headers too
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers.update(SECURITY_HEADERS)
+    return response
 
 
 def rows(sql: str, params: tuple = ()) -> list[dict]:
@@ -210,15 +242,41 @@ def enumeration(name: str, adif_version: Optional[str] = VersionParam) -> dict:
 
 
 # --- Swagger UI, self-hosted -------------------------------------------------------------------
+# FastAPI's own page initialises Swagger UI in an inline <script>, which the policy above refuses,
+# so the page loads its initialiser as a file instead.
+SWAGGER_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IONIS-AI Atlas API</title>
+<link rel="stylesheet" href="/static/swagger/swagger-ui.css">
+<link rel="icon" href="/static/swagger/favicon-32x32.png">
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="/static/swagger/swagger-ui-bundle.js"></script>
+<script src="/api/docs/init.js"></script>
+</body>
+</html>
+"""
+SWAGGER_INIT = f"""SwaggerUIBundle({{
+  url: "{API}/openapi.json",
+  dom_id: "#swagger-ui",
+  layout: "BaseLayout",
+  deepLinking: true,
+  presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+}});
+"""
+
+
 @app.get("/api/docs", include_in_schema=False)
 def swagger() -> HTMLResponse:
-    return get_swagger_ui_html(
-        openapi_url=app.openapi_url,
-        title="IONIS-AI Atlas API",
-        swagger_js_url="/static/swagger/swagger-ui-bundle.js",
-        swagger_css_url="/static/swagger/swagger-ui.css",
-        swagger_favicon_url="/static/swagger/favicon-32x32.png",
-    )
+    return HTMLResponse(SWAGGER_PAGE)
+
+
+@app.get("/api/docs/init.js", include_in_schema=False)
+def swagger_init() -> Response:
+    return Response(SWAGGER_INIT, media_type="text/javascript")
 
 
 # --- The React app (single-page: unknown paths serve index.html) -------------------------------

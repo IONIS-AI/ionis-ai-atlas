@@ -14,11 +14,15 @@ services:
     mem_limit: 1g
     read_only: true
     tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
   db:
     image: ${ATLAS_REGISTRY:-docker.io/ki7mt}/${ATLAS_DB:-ionis-ai-atlas-db-dev}:${ATLAS_TAG:-latest}
     cpus: 3
     mem_limit: 7g
     shm_size: 1g
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     volumes: [pgdata:/var/lib/pgsql/17/data]
 volumes:
   pgdata:
