@@ -30,7 +30,7 @@ async function load(view: string, v: string): Promise<Loaded> {
     }
     case "fields": {
       const { data } = await api.GET("/api/v1/adif/fields", q);
-      return { title: "Fields", lead: "ADIF's fields: the definitions every IONIS column is built on.", rows: data ?? [], cols: [
+      return { title: "Fields", lead: "ADIF's fields: the definitions every IONIS-AI column is built on.", rows: data ?? [], cols: [
         { head: "Field", cell: (r) => <code>{r.field_name}</code> },
         { head: "Data type", cell: (r) => r.data_type },
         { head: "Enumeration", cell: (r) => r.enumeration },

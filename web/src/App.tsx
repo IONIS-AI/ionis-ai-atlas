@@ -13,7 +13,7 @@ export function App() {
   return (
     <div className="shell">
       <header className="topbar">
-        <div className="brand">IONIS <span>Atlas</span></div>
+        <div className="brand">IONIS-AI <span>Atlas</span></div>
         <nav className="sections" aria-label="Sections">
           {SECTIONS.map((s) => (
             <NavLink key={s.path} to={s.path} className={({ isActive }) => (isActive ? "active" : "")}>

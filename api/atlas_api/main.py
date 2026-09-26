@@ -1,4 +1,4 @@
-"""IONIS Atlas API — read-only, versioned under /api/v1, documented at /api/docs.
+"""IONIS-AI Atlas API — read-only, versioned under /api/v1, documented at /api/docs.
 
 The browser never talks to the database: this service holds the only connection, as a role that
 can only SELECT (atlas_ro). Every query lives in this file, is parameterised, and is bounded.
@@ -36,10 +36,10 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="IONIS Atlas API",
+    title="IONIS-AI Atlas API",
     version="1.0.0",
     description=(
-        "Read-only access to the published IONIS collection. Every field is defined by "
+        "Read-only access to the published IONIS-AI collection. Every field is defined by "
         "ADIF 3.1.7 or by the IONIS-AI extension (ionis-core docs/IONIS-DATA-SPEC.md). "
         "This description is a published contract: /api/v1 changes are additive only."
     ),
@@ -141,7 +141,7 @@ def contests(adif_version: Optional[str] = VersionParam) -> list[dict]:
 
 @app.get(f"{API}/adif/fields", response_model=list[Field], tags=["adif"])
 def fields(adif_version: Optional[str] = VersionParam) -> list[dict]:
-    """ADIF's fields: the vocabulary every IONIS column is defined against."""
+    """ADIF's fields: the vocabulary every IONIS-AI column is defined against."""
     v = version_or_current(adif_version)
     return rows(
         "SELECT field_name, data_type, enumeration, description, "
@@ -214,7 +214,7 @@ def enumeration(name: str, adif_version: Optional[str] = VersionParam) -> dict:
 def swagger() -> HTMLResponse:
     return get_swagger_ui_html(
         openapi_url=app.openapi_url,
-        title="IONIS Atlas API",
+        title="IONIS-AI Atlas API",
         swagger_js_url="/static/swagger/swagger-ui-bundle.js",
         swagger_css_url="/static/swagger/swagger-ui.css",
         swagger_favicon_url="/static/swagger/favicon-32x32.png",

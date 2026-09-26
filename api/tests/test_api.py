@@ -55,7 +55,7 @@ def test_frequencies_are_numbers(client):
 
 
 def test_openapi_is_versioned_and_swagger_is_local(client):
-    assert client.get("/api/v1/openapi.json").json()["info"]["title"] == "IONIS Atlas API"
+    assert client.get("/api/v1/openapi.json").json()["info"]["title"] == "IONIS-AI Atlas API"
     html = client.get("/api/docs").text
     assert "/static/swagger/swagger-ui-bundle.js" in html and "cdn" not in html.lower()
 

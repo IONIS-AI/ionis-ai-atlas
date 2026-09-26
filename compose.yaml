@@ -1,7 +1,7 @@
-# IONIS Atlas. `docker compose up`, then open http://localhost:8080
+# IONIS-AI Atlas. `docker compose up`, then open http://localhost:8080
 # The two containers together are held to the target machine's budget: 4 CPUs and 8 GB
 # (Atlas SPEC.md, "Target machine"). The database port is not published outside this network.
-name: ionis-atlas
+name: ionis-ai-atlas
 services:
   atlas:
     image: ${ATLAS_REGISTRY:-docker.io/ki7mt}/${ATLAS_APP:-ionis-ai-atlas-dev}:${ATLAS_TAG:-latest}

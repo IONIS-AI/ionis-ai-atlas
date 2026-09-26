@@ -30,7 +30,7 @@ EOF
 # 2. The cluster, tuned for the target machine (the two containers share 4 CPUs and 8 GB).
 "$PGBIN/initdb" -D "$PGDATA" --auth-local=peer --auth-host=scram-sha-256 --encoding=UTF8 --locale=C.UTF-8
 cat >> "$PGDATA/postgresql.conf" <<'EOF'
-# --- IONIS Atlas: tuned for the target machine (Atlas SPEC.md, "Target machine") ---
+# --- IONIS-AI Atlas: tuned for the target machine (Atlas SPEC.md, "Target machine") ---
 listen_addresses = '*'
 max_connections = 30
 shared_buffers = 1GB
@@ -40,7 +40,7 @@ maintenance_work_mem = 256MB
 jit = off
 EOF
 cat >> "$PGDATA/pg_hba.conf" <<'EOF'
-# --- IONIS Atlas: only the read-only role, over the compose network ---
+# --- IONIS-AI Atlas: only the read-only role, over the compose network ---
 host  ionis  atlas_ro  0.0.0.0/0  scram-sha-256
 host  ionis  atlas_ro  ::/0       scram-sha-256
 EOF

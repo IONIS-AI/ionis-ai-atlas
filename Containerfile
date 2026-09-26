@@ -1,4 +1,4 @@
-# IONIS Atlas app: the React build and the FastAPI API in one image, on Red Hat UBI 9.
+# IONIS-AI Atlas app: the React build and the FastAPI API in one image, on Red Hat UBI 9.
 # Stage 1 builds the front end (Node only here); stage 2 is the runtime: UBI minimal with only
 # Python 3.12 (the full ubi9/python-312 developer image made this 1.13 GB).
 
@@ -32,6 +32,6 @@ HEALTHCHECK --interval=10s --timeout=5s --retries=6 CMD python3.12 -c "import ur
 CMD ["uvicorn", "atlas_api.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "2"]
 
 LABEL org.opencontainers.image.title="ionis-ai-atlas" \
-      org.opencontainers.image.description="IONIS Atlas: React front end and FastAPI API" \
+      org.opencontainers.image.description="IONIS-AI Atlas: React front end and FastAPI API" \
       org.opencontainers.image.source="https://github.com/IONIS-AI/ionis-ai-atlas" \
       org.opencontainers.image.licenses="Apache-2.0"

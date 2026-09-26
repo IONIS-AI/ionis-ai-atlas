@@ -154,7 +154,7 @@ export interface paths {
         };
         /**
          * Fields
-         * @description ADIF's fields: the vocabulary every IONIS column is defined against.
+         * @description ADIF's fields: the vocabulary every IONIS-AI column is defined against.
          */
         get: operations["fields_api_v1_adif_fields_get"];
         put?: never;

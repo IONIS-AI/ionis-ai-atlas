@@ -1,4 +1,4 @@
-# IONIS Atlas — build, test and run the two images locally.
+# IONIS-AI Atlas — build, test and run the two images locally.
 #   make images      build ionis-ai-atlas and ionis-ai-atlas-db (docker format keeps HEALTHCHECK)
 #   make test        API tests against a fresh database container, plus the front-end tests
 #   make up / down   run the stack from the local images (http://127.0.0.1:8080)

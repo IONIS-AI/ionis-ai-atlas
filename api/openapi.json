@@ -457,8 +457,8 @@
     }
   },
   "info": {
-    "description": "Read-only access to the published IONIS collection. Every field is defined by ADIF 3.1.7 or by the IONIS-AI extension (ionis-core docs/IONIS-DATA-SPEC.md). This description is a published contract: /api/v1 changes are additive only.",
-    "title": "IONIS Atlas API",
+    "description": "Read-only access to the published IONIS-AI collection. Every field is defined by ADIF 3.1.7 or by the IONIS-AI extension (ionis-core docs/IONIS-DATA-SPEC.md). This description is a published contract: /api/v1 changes are additive only.",
+    "title": "IONIS-AI Atlas API",
     "version": "1.0.0"
   },
   "openapi": "3.1.0",
@@ -828,7 +828,7 @@
     },
     "/api/v1/adif/fields": {
       "get": {
-        "description": "ADIF's fields: the vocabulary every IONIS column is defined against.",
+        "description": "ADIF's fields: the vocabulary every IONIS-AI column is defined against.",
         "operationId": "fields_api_v1_adif_fields_get",
         "parameters": [
           {
