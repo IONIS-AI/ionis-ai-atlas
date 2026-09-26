@@ -1,0 +1,8 @@
+# Keep host build output out of the image build context. A host's web/node_modules would otherwise be
+# copied over the clean `npm ci` install, and on a Mac it holds macOS binaries the Linux build can't use.
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+.git
