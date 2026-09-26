@@ -4,6 +4,8 @@ ADIF (ionis-core docs/IONIS-DATA-SPEC.md). Add fields freely; never rename or re
 from datetime import datetime
 from typing import Optional
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -56,3 +58,31 @@ class Field(BaseModel):
     enumeration: Optional[str]
     description: Optional[str]
     import_only: bool
+
+
+class DataType(BaseModel):
+    data_type_name: str
+    data_type_indicator: Optional[str]
+    description: Optional[str]
+    minimum_value: Optional[str]
+    maximum_value: Optional[str]
+    import_only: bool
+
+
+class EnumerationSummary(BaseModel):
+    name: str
+    table: str
+    records: int
+    import_only_records: int
+
+
+class Column(BaseModel):
+    name: str
+    type: str
+
+
+class Enumeration(BaseModel):
+    name: str
+    adif_version: str
+    columns: list[Column]
+    rows: list[dict[str, Any]]

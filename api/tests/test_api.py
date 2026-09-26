@@ -69,3 +69,25 @@ def test_the_api_role_cannot_write():
     with psycopg.connect(DB) as conn:
         with pytest.raises(psycopg.errors.Error):
             conn.execute("INSERT INTO adif.release VALUES ('x','x',NULL,NULL,'x','x')")
+
+
+def test_all_25_enumerations_are_listed_with_adif_total(client):
+    e = client.get("/api/v1/adif/enumerations").json()
+    assert len(e) == 25 and sum(x["records"] for x in e) == 3345
+    assert "Country" not in {x["name"] for x in e}
+
+
+def test_every_enumeration_is_readable_and_complete(client):
+    for x in client.get("/api/v1/adif/enumerations").json():
+        body = client.get(f"/api/v1/adif/enumerations/{x['name']}").json()
+        assert len(body["rows"]) == x["records"], x["name"]
+        assert {"adif_version", "record"}.isdisjoint(c["name"] for c in body["columns"])
+
+
+def test_unknown_or_hostile_enumeration_name_is_404(client):
+    for bad in ("nosuch", "release", "field", 'band; DROP TABLE adif.band', "..%2Fcurrent", "band%00"):
+        assert client.get(f"/api/v1/adif/enumerations/{bad}").status_code == 404, bad
+
+
+def test_datatypes(client):
+    assert len(client.get("/api/v1/adif/datatypes").json()) == 28

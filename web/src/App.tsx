@@ -1,10 +1,10 @@
 // The shell (SPEC "The shell"): primary navigation across the top, a contextual sidebar on the left,
 // the content region in the middle. The frame persists; only the content region changes. Every
 // view is addressable by URL, and its filter state lives in the URL (R11).
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useParams, useSearchParams } from "react-router-dom";
-import { api, type Release } from "./api/client";
-import { AdifView, ADIF_VIEWS } from "./adif/AdifView";
+import { api, type EnumerationSummary, type Release } from "./api/client";
+import { AdifView, DEFINITIONS } from "./adif/AdifView";
 
 // Sections appear here as they are built. A section that does not exist yet is absent, not disabled.
 const SECTIONS = [{ path: "/adif", label: "ADIF Reference" }];
@@ -24,8 +24,8 @@ export function App() {
         <a className="apidocs" href="/api/docs">API</a>
       </header>
       <Routes>
-        <Route path="/" element={<Navigate to="/adif/bands" replace />} />
-        <Route path="/adif" element={<Navigate to="/adif/bands" replace />} />
+        <Route path="/" element={<Navigate to="/adif/band" replace />} />
+        <Route path="/adif" element={<Navigate to="/adif/band" replace />} />
         <Route path="/adif/:view" element={<AdifSection />} />
         <Route path="*" element={<main className="content"><p className="state">No such page.</p></main>} />
       </Routes>
@@ -34,10 +34,11 @@ export function App() {
 }
 
 function AdifSection() {
-  const { view = "bands" } = useParams();
+  const { view = "band" } = useParams();
   const [params, setParams] = useSearchParams();
   const [releases, setReleases] = useState<Release[] | null>(null);
   const [current, setCurrent] = useState<string | null>(null);
+  const [enums, setEnums] = useState<EnumerationSummary[]>([]);
 
   useEffect(() => {
     api.GET("/api/v1/adif/releases").then(({ data }) => setReleases(data ?? []));
@@ -45,6 +46,10 @@ function AdifSection() {
   }, []);
 
   const version = params.get("v") ?? current;
+  useEffect(() => {
+    if (!version) return;
+    api.GET("/api/v1/adif/enumerations", { params: { query: { adif_version: version } } }).then(({ data }) => setEnums(data ?? []));
+  }, [version]);
   const query = params.get("q") ?? "";
   const set = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -52,8 +57,7 @@ function AdifSection() {
     else next.delete(key);
     setParams(next, { replace: true });
   };
-  const known = useMemo(() => ADIF_VIEWS.map((v) => v.key), []);
-  if (!known.includes(view)) return <Navigate to="/adif/bands" replace />;
+  const search = params.toString();
 
   return (
     <>
@@ -68,19 +72,27 @@ function AdifSection() {
             ))}
           </select>
         </label>
-        <nav className="views" aria-label="ADIF tables">
-          {ADIF_VIEWS.map((v) => (
-            <NavLink key={v.key} to={{ pathname: `/adif/${v.key}`, search: params.toString() }}
-              className={({ isActive }) => (isActive ? "active" : "")}>
-              {v.label}
-            </NavLink>
-          ))}
-        </nav>
         <label className="control">
           <span>Filter</span>
           <input type="search" value={query} placeholder="e.g. FT4, 20m, Bouvet"
             onChange={(e) => set("q", e.target.value)} />
         </label>
+        <nav className="views" aria-label="ADIF definitions">
+          <span className="group">Definitions</span>
+          {DEFINITIONS.map((v) => (
+            <NavLink key={v.key} to={{ pathname: `/adif/${v.key}`, search }} className={({ isActive }) => (isActive ? "active" : "")}>
+              {v.label}
+            </NavLink>
+          ))}
+        </nav>
+        <nav className="views" aria-label="ADIF enumerations">
+          <span className="group">Enumerations ({enums.length})</span>
+          {enums.map((e) => (
+            <NavLink key={e.table} to={{ pathname: `/adif/${e.table}`, search }} className={({ isActive }) => (isActive ? "active" : "")}>
+              <span>{e.name.replace(/_/g, " ")}</span><span className="n">{e.records}</span>
+            </NavLink>
+          ))}
+        </nav>
         <p className="note">ADIF {version ?? "…"} as published by adif.org, loaded unmodified.</p>
       </aside>
       <main className="content">

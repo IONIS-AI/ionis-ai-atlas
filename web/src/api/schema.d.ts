@@ -64,6 +64,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/adif/datatypes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Datatypes
+         * @description ADIF's data types (GridSquare, Date, Number, ...).
+         */
+        get: operations["datatypes_api_v1_adif_datatypes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/adif/dxcc": {
         parameters: {
             query?: never;
@@ -76,6 +96,47 @@ export interface paths {
          * @description ADIF's DXCC Entity Code enumeration, deleted entities included and marked.
          */
         get: operations["dxcc_api_v1_adif_dxcc_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/adif/enumerations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Enumerations
+         * @description Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x).
+         */
+        get: operations["enumerations_api_v1_adif_enumerations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/adif/enumerations/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Enumeration
+         * @description One ADIF enumeration, every record, with the columns ADIF defines for it. `name` is ADIF's
+         *     enumeration name (e.g. Propagation_Mode) or its table name; anything else is 404.
+         */
+        get: operations["enumeration_api_v1_adif_enumerations__name__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -176,6 +237,13 @@ export interface components {
             /** Upper Freq Mhz */
             upper_freq_mhz: number | null;
         };
+        /** Column */
+        Column: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+        };
         /** Contest */
         Contest: {
             /** Contest Id */
@@ -195,6 +263,21 @@ export interface components {
              */
             set_at: string;
         };
+        /** DataType */
+        DataType: {
+            /** Data Type Indicator */
+            data_type_indicator: string | null;
+            /** Data Type Name */
+            data_type_name: string;
+            /** Description */
+            description: string | null;
+            /** Import Only */
+            import_only: boolean;
+            /** Maximum Value */
+            maximum_value: string | null;
+            /** Minimum Value */
+            minimum_value: string | null;
+        };
         /** DxccEntity */
         DxccEntity: {
             /** Deleted */
@@ -203,6 +286,30 @@ export interface components {
             entity_code: number;
             /** Entity Name */
             entity_name: string;
+        };
+        /** Enumeration */
+        Enumeration: {
+            /** Adif Version */
+            adif_version: string;
+            /** Columns */
+            columns: components["schemas"]["Column"][];
+            /** Name */
+            name: string;
+            /** Rows */
+            rows: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** EnumerationSummary */
+        EnumerationSummary: {
+            /** Import Only Records */
+            import_only_records: number;
+            /** Name */
+            name: string;
+            /** Records */
+            records: number;
+            /** Table */
+            table: string;
         };
         /** Field */
         Field: {
@@ -357,6 +464,38 @@ export interface operations {
             };
         };
     };
+    datatypes_api_v1_adif_datatypes_get: {
+        parameters: {
+            query?: {
+                /** @description ADIF version, e.g. 3.1.7. Defaults to the lab's current version. */
+                adif_version?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataType"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dxcc_api_v1_adif_dxcc_get: {
         parameters: {
             query?: {
@@ -376,6 +515,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DxccEntity"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enumerations_api_v1_adif_enumerations_get: {
+        parameters: {
+            query?: {
+                /** @description ADIF version, e.g. 3.1.7. Defaults to the lab's current version. */
+                adif_version?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnumerationSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enumeration_api_v1_adif_enumerations__name__get: {
+        parameters: {
+            query?: {
+                /** @description ADIF version, e.g. 3.1.7. Defaults to the lab's current version. */
+                adif_version?: string | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Enumeration"];
                 };
             };
             /** @description Validation Error */

@@ -13,10 +13,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from .models import Band, Contest, Current, DxccEntity, Field, Health, Mode, Release
+from .models import (Band, Contest, Current, DataType, DxccEntity, Enumeration, EnumerationSummary, Field,
+                     Health, Mode, Release)
 
 API = "/api/v1"
 STATIC = Path(os.environ.get("ATLAS_STATIC", "/app/static"))  # React build + Swagger UI assets
@@ -146,6 +148,65 @@ def fields(adif_version: Optional[str] = VersionParam) -> list[dict]:
         "coalesce(import_only, false) AS import_only FROM adif.field WHERE adif_version = %s ORDER BY field_name",
         (v,),
     )
+
+
+@app.get(f"{API}/adif/datatypes", response_model=list[DataType], tags=["adif"])
+def datatypes(adif_version: Optional[str] = VersionParam) -> list[dict]:
+    """ADIF's data types (GridSquare, Date, Number, ...)."""
+    v = version_or_current(adif_version)
+    return rows(
+        "SELECT data_type_name, data_type_indicator, description, minimum_value, maximum_value, "
+        "coalesce(import_only, false) AS import_only FROM adif.datatype WHERE adif_version = %s ORDER BY data_type_name",
+        (v,),
+    )
+
+
+# Tables in the adif schema that are not enumerations.
+_NOT_ENUMS = ("release", "current", "datatype", "field")
+
+
+def enumeration_tables() -> dict[str, str]:
+    """ADIF enumeration name -> table, read from the database itself (never from a hand list), so a
+    name from a request is only ever matched against tables that exist."""
+    tables = [r["table_name"] for r in rows(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'adif' "
+        "AND table_type = 'BASE TABLE' AND NOT (table_name = ANY(%s)) ORDER BY table_name", (list(_NOT_ENUMS),))]
+    out = {}
+    for t in tables:
+        name = rows(sql.SQL("SELECT record->>'Enumeration Name' AS n FROM adif.{} LIMIT 1").format(sql.Identifier(t)))
+        out[(name[0]["n"] if name and name[0]["n"] else t)] = t
+    return out
+
+
+@app.get(f"{API}/adif/enumerations", response_model=list[EnumerationSummary], tags=["adif"])
+def enumerations(adif_version: Optional[str] = VersionParam) -> list[dict]:
+    """Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x)."""
+    v = version_or_current(adif_version)
+    out = []
+    for name, t in enumeration_tables().items():
+        c = rows(sql.SQL("SELECT count(*) AS n, count(*) FILTER (WHERE import_only) AS io FROM adif.{} "
+                         "WHERE adif_version = %s").format(sql.Identifier(t)), (v,))[0]
+        out.append({"name": name, "table": t, "records": c["n"], "import_only_records": c["io"]})
+    return sorted(out, key=lambda e: e["name"].lower())
+
+
+@app.get(f"{API}/adif/enumerations/{{name}}", response_model=Enumeration, tags=["adif"])
+def enumeration(name: str, adif_version: Optional[str] = VersionParam) -> dict:
+    """One ADIF enumeration, every record, with the columns ADIF defines for it. `name` is ADIF's
+    enumeration name (e.g. Propagation_Mode) or its table name; anything else is 404."""
+    v = version_or_current(adif_version)
+    tables = enumeration_tables()
+    by_table = {t: n for n, t in tables.items()}
+    table = tables.get(name) or (name if name in by_table else None)
+    if table is None:
+        raise HTTPException(404, f"No ADIF enumeration named {name!r}")
+    cols = rows(
+        "SELECT column_name AS name, data_type AS type FROM information_schema.columns "
+        "WHERE table_schema = 'adif' AND table_name = %s AND column_name NOT IN ('adif_version', 'record') "
+        "ORDER BY ordinal_position", (table,))
+    data = rows(sql.SQL("SELECT {} FROM adif.{} WHERE adif_version = %s ORDER BY record_key").format(
+        sql.SQL(", ").join(sql.Identifier(c["name"]) for c in cols), sql.Identifier(table)), (v,))
+    return {"name": by_table[table], "adif_version": v, "columns": cols, "rows": data}
 
 
 # --- Swagger UI, self-hosted -------------------------------------------------------------------

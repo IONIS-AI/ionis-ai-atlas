@@ -36,7 +36,9 @@ select, input { font: inherit; color: var(--ink); background: var(--surface-2); 
   border-radius: 6px; padding: 7px 9px; }
 select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .views { display: flex; flex-direction: column; gap: 2px; }
-.views a { color: var(--ink-2); text-decoration: none; padding: 7px 10px; border-radius: 6px; }
+.views a { color: var(--ink-2); text-decoration: none; padding: 5px 10px; border-radius: 6px; display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.views .group { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 0 10px 4px; }
+.views .n { color: var(--ink-3); font-variant-numeric: tabular-nums; font-size: 12px; }
 .views a:hover { background: var(--surface-2); color: var(--ink); }
 .views a.active { background: var(--accent-wash); color: var(--accent); font-weight: 600; }
 .note { font-size: 12.5px; color: var(--ink-3); margin: auto 0 0; }

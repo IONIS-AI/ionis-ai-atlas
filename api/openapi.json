@@ -43,6 +43,24 @@
         "title": "Band",
         "type": "object"
       },
+      "Column": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "Column",
+        "type": "object"
+      },
       "Contest": {
         "properties": {
           "contest_id": {
@@ -92,6 +110,72 @@
         "title": "Current",
         "type": "object"
       },
+      "DataType": {
+        "properties": {
+          "data_type_indicator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Type Indicator"
+          },
+          "data_type_name": {
+            "title": "Data Type Name",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "import_only": {
+            "title": "Import Only",
+            "type": "boolean"
+          },
+          "maximum_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maximum Value"
+          },
+          "minimum_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Value"
+          }
+        },
+        "required": [
+          "data_type_name",
+          "data_type_indicator",
+          "description",
+          "minimum_value",
+          "maximum_value",
+          "import_only"
+        ],
+        "title": "DataType",
+        "type": "object"
+      },
       "DxccEntity": {
         "properties": {
           "deleted": {
@@ -113,6 +197,69 @@
           "deleted"
         ],
         "title": "DxccEntity",
+        "type": "object"
+      },
+      "Enumeration": {
+        "properties": {
+          "adif_version": {
+            "title": "Adif Version",
+            "type": "string"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/Column"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "adif_version",
+          "columns",
+          "rows"
+        ],
+        "title": "Enumeration",
+        "type": "object"
+      },
+      "EnumerationSummary": {
+        "properties": {
+          "import_only_records": {
+            "title": "Import Only Records",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "records": {
+            "title": "Records",
+            "type": "integer"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "table",
+          "records",
+          "import_only_records"
+        ],
+        "title": "EnumerationSummary",
         "type": "object"
       },
       "Field": {
@@ -450,6 +597,62 @@
         ]
       }
     },
+    "/api/v1/adif/datatypes": {
+      "get": {
+        "description": "ADIF's data types (GridSquare, Date, Number, ...).",
+        "operationId": "datatypes_api_v1_adif_datatypes_get",
+        "parameters": [
+          {
+            "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+            "in": "query",
+            "name": "adif_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+              "title": "Adif Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DataType"
+                  },
+                  "title": "Response Datatypes Api V1 Adif Datatypes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Datatypes",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
     "/api/v1/adif/dxcc": {
       "get": {
         "description": "ADIF's DXCC Entity Code enumeration, deleted entities included and marked.",
@@ -501,6 +704,123 @@
           }
         },
         "summary": "Dxcc",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
+    "/api/v1/adif/enumerations": {
+      "get": {
+        "description": "Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x).",
+        "operationId": "enumerations_api_v1_adif_enumerations_get",
+        "parameters": [
+          {
+            "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+            "in": "query",
+            "name": "adif_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+              "title": "Adif Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EnumerationSummary"
+                  },
+                  "title": "Response Enumerations Api V1 Adif Enumerations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enumerations",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
+    "/api/v1/adif/enumerations/{name}": {
+      "get": {
+        "description": "One ADIF enumeration, every record, with the columns ADIF defines for it. `name` is ADIF's\nenumeration name (e.g. Propagation_Mode) or its table name; anything else is 404.",
+        "operationId": "enumeration_api_v1_adif_enumerations__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+            "in": "query",
+            "name": "adif_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+              "title": "Adif Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enumeration"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enumeration",
         "tags": [
           "adif"
         ]
