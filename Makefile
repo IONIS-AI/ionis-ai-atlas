@@ -2,12 +2,14 @@
 #   make images      build ionis-ai-atlas and ionis-ai-atlas-db (docker format keeps HEALTHCHECK)
 #   make test        API tests against a fresh database container, plus the front-end tests
 #   make up / down   run the stack from the local images (http://127.0.0.1:8080)
+#   make dev         Docker (Desktop): build both images from this checkout and run them; after a
+#                    `git pull`, `make dev` again picks up the changes. `make dev-down` stops it.
 ENGINE ?= podman
 TAG    ?= dev
 LOCAL  := ATLAS_REGISTRY=localhost ATLAS_APP=ionis-ai-atlas ATLAS_DB=ionis-ai-atlas-db ATLAS_TAG=$(TAG)
 PY     ?= python3.12
 
-.PHONY: images openapi check-vendor test up down
+.PHONY: images openapi check-vendor test up down dev dev-down
 
 check-vendor:
 	scripts/sync-from-ionis-core.sh --check
@@ -32,3 +34,11 @@ up:
 
 down:
 	$(LOCAL) $(ENGINE) compose down
+
+DEV := docker compose -f compose.yaml -f compose.dev.yaml
+
+dev: check-vendor
+	$(DEV) up -d --build
+
+dev-down:
+	$(DEV) down
