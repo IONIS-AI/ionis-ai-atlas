@@ -1,0 +1,989 @@
+{
+  "components": {
+    "schemas": {
+      "Band": {
+        "properties": {
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "import_only": {
+            "title": "Import Only",
+            "type": "boolean"
+          },
+          "lower_freq_mhz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lower Freq Mhz"
+          },
+          "upper_freq_mhz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper Freq Mhz"
+          }
+        },
+        "required": [
+          "band",
+          "lower_freq_mhz",
+          "upper_freq_mhz",
+          "import_only"
+        ],
+        "title": "Band",
+        "type": "object"
+      },
+      "Column": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "Column",
+        "type": "object"
+      },
+      "Contest": {
+        "properties": {
+          "contest_id": {
+            "title": "Contest Id",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "import_only": {
+            "title": "Import Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "contest_id",
+          "description",
+          "import_only"
+        ],
+        "title": "Contest",
+        "type": "object"
+      },
+      "Current": {
+        "properties": {
+          "adif_version": {
+            "title": "Adif Version",
+            "type": "string"
+          },
+          "set_at": {
+            "format": "date-time",
+            "title": "Set At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "adif_version",
+          "set_at"
+        ],
+        "title": "Current",
+        "type": "object"
+      },
+      "DataType": {
+        "properties": {
+          "data_type_indicator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Type Indicator"
+          },
+          "data_type_name": {
+            "title": "Data Type Name",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "import_only": {
+            "title": "Import Only",
+            "type": "boolean"
+          },
+          "maximum_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maximum Value"
+          },
+          "minimum_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Value"
+          }
+        },
+        "required": [
+          "data_type_name",
+          "data_type_indicator",
+          "description",
+          "minimum_value",
+          "maximum_value",
+          "import_only"
+        ],
+        "title": "DataType",
+        "type": "object"
+      },
+      "DxccEntity": {
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "entity_code": {
+            "title": "Entity Code",
+            "type": "integer"
+          },
+          "entity_name": {
+            "title": "Entity Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_code",
+          "entity_name",
+          "deleted"
+        ],
+        "title": "DxccEntity",
+        "type": "object"
+      },
+      "Enumeration": {
+        "properties": {
+          "adif_version": {
+            "title": "Adif Version",
+            "type": "string"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/Column"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "adif_version",
+          "columns",
+          "rows"
+        ],
+        "title": "Enumeration",
+        "type": "object"
+      },
+      "EnumerationSummary": {
+        "properties": {
+          "import_only_records": {
+            "title": "Import Only Records",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "records": {
+            "title": "Records",
+            "type": "integer"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "table",
+          "records",
+          "import_only_records"
+        ],
+        "title": "EnumerationSummary",
+        "type": "object"
+      },
+      "Field": {
+        "properties": {
+          "data_type": {
+            "title": "Data Type",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enumeration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enumeration"
+          },
+          "field_name": {
+            "title": "Field Name",
+            "type": "string"
+          },
+          "import_only": {
+            "title": "Import Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "field_name",
+          "data_type",
+          "enumeration",
+          "description",
+          "import_only"
+        ],
+        "title": "Field",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "Health",
+        "type": "object"
+      },
+      "Mode": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "import_only": {
+            "title": "Import Only",
+            "type": "boolean"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "submodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Submodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "description",
+          "import_only",
+          "submodes"
+        ],
+        "title": "Mode",
+        "type": "object"
+      },
+      "Release": {
+        "properties": {
+          "adif_version": {
+            "title": "Adif Version",
+            "type": "string"
+          },
+          "released": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "adif_version",
+          "status",
+          "released",
+          "source_url",
+          "source_sha256"
+        ],
+        "title": "Release",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Read-only access to the published IONIS-AI collection. Every field is defined by ADIF 3.1.7 or by the IONIS-AI extension (ionis-core docs/IONIS-DATA-SPEC.md). This description is a published contract: /api/v1 changes are additive only.",
+    "title": "IONIS-AI Atlas API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/adif/bands": {
+      "get": {
+        "description": "ADIF's Band enumeration: name and frequency range in MHz, in frequency order.",
+        "operationId": "bands_api_v1_adif_bands_get",
+        "parameters": [
+          {
+            "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+            "in": "query",
+            "name": "adif_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+              "title": "Adif Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Band"
+                  },
+                  "title": "Response Bands Api V1 Adif Bands Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bands",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
+    "/api/v1/adif/contests": {
+      "get": {
+        "description": "ADIF's Contest_ID enumeration.",
+        "operationId": "contests_api_v1_adif_contests_get",
+        "parameters": [
+          {
+            "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+            "in": "query",
+            "name": "adif_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+              "title": "Adif Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Contest"
+                  },
+                  "title": "Response Contests Api V1 Adif Contests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Contests",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
+    "/api/v1/adif/current": {
+      "get": {
+        "description": "The lab-wide current ADIF version.",
+        "operationId": "current_api_v1_adif_current_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Current"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Current",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
+    "/api/v1/adif/datatypes": {
+      "get": {
+        "description": "ADIF's data types (GridSquare, Date, Number, ...).",
+        "operationId": "datatypes_api_v1_adif_datatypes_get",
+        "parameters": [
+          {
+            "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+            "in": "query",
+            "name": "adif_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+              "title": "Adif Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DataType"
+                  },
+                  "title": "Response Datatypes Api V1 Adif Datatypes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Datatypes",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
+    "/api/v1/adif/dxcc": {
+      "get": {
+        "description": "ADIF's DXCC Entity Code enumeration, deleted entities included and marked.",
+        "operationId": "dxcc_api_v1_adif_dxcc_get",
+        "parameters": [
+          {
+            "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+            "in": "query",
+            "name": "adif_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+              "title": "Adif Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DxccEntity"
+                  },
+                  "title": "Response Dxcc Api V1 Adif Dxcc Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dxcc",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
+    "/api/v1/adif/enumerations": {
+      "get": {
+        "description": "Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x).",
+        "operationId": "enumerations_api_v1_adif_enumerations_get",
+        "parameters": [
+          {
+            "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+            "in": "query",
+            "name": "adif_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+              "title": "Adif Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EnumerationSummary"
+                  },
+                  "title": "Response Enumerations Api V1 Adif Enumerations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enumerations",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
+    "/api/v1/adif/enumerations/{name}": {
+      "get": {
+        "description": "One ADIF enumeration, every record, with the columns ADIF defines for it. `name` is ADIF's\nenumeration name (e.g. Propagation_Mode) or its table name; anything else is 404.",
+        "operationId": "enumeration_api_v1_adif_enumerations__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+            "in": "query",
+            "name": "adif_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+              "title": "Adif Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enumeration"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enumeration",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
+    "/api/v1/adif/fields": {
+      "get": {
+        "description": "ADIF's fields: the vocabulary every IONIS-AI column is defined against.",
+        "operationId": "fields_api_v1_adif_fields_get",
+        "parameters": [
+          {
+            "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+            "in": "query",
+            "name": "adif_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+              "title": "Adif Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Field"
+                  },
+                  "title": "Response Fields Api V1 Adif Fields Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fields",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
+    "/api/v1/adif/modes": {
+      "get": {
+        "description": "ADIF's Mode enumeration, each with its submodes (e.g. MFSK \u2192 FT4).",
+        "operationId": "modes_api_v1_adif_modes_get",
+        "parameters": [
+          {
+            "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+            "in": "query",
+            "name": "adif_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+              "title": "Adif Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Mode"
+                  },
+                  "title": "Response Modes Api V1 Adif Modes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Modes",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
+    "/api/v1/adif/releases": {
+      "get": {
+        "description": "Every ADIF version loaded, with the SHA-256 of the adif.org file it was loaded from.",
+        "operationId": "releases_api_v1_adif_releases_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Release"
+                  },
+                  "title": "Response Releases Api V1 Adif Releases Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Releases",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "service"
+        ]
+      }
+    }
+  }
+}

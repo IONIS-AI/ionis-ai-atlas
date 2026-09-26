@@ -1,0 +1,24 @@
+# IONIS-AI Atlas. `docker compose up`, then open http://localhost:8080
+# The two containers together are held to the target machine's budget: 4 CPUs and 8 GB
+# (Atlas SPEC.md, "Target machine"). The database port is not published outside this network.
+name: ionis-ai-atlas
+services:
+  atlas:
+    image: ${ATLAS_REGISTRY:-docker.io/ki7mt}/${ATLAS_APP:-ionis-ai-atlas-dev}:${ATLAS_TAG:-latest}
+    ports: ["127.0.0.1:8080:8080"]
+    environment:
+      ATLAS_DB_URL: postgresql://atlas_ro:atlas@db:5432/ionis
+    depends_on:
+      db: { condition: service_healthy }
+    cpus: 1
+    mem_limit: 1g
+    read_only: true
+    tmpfs: [/tmp]
+  db:
+    image: ${ATLAS_REGISTRY:-docker.io/ki7mt}/${ATLAS_DB:-ionis-ai-atlas-db-dev}:${ATLAS_TAG:-latest}
+    cpus: 3
+    mem_limit: 7g
+    shm_size: 1g
+    volumes: [pgdata:/var/lib/pgsql/17/data]
+volumes:
+  pgdata:

@@ -1,0 +1,8 @@
+# Pinned: the image must build the same way every time.
+fastapi==0.141.1
+starlette==1.7.0
+pydantic==2.13.5
+uvicorn==0.54.0
+psycopg==3.3.6
+psycopg-binary==3.3.6
+psycopg-pool==3.3.3
