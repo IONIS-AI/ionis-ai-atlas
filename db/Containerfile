@@ -1,0 +1,25 @@
+# IONIS Atlas database: PostgreSQL 17 + pgvector on Red Hat UBI 9, shipped initialised with the
+# published data. Today that is the ADIF reference tier (3.1.6 and 3.1.7, current 3.1.7), loaded
+# and audited at build time; the build fails if the audit does.
+FROM registry.access.redhat.com/ubi9/ubi:9.6
+
+RUN dnf -y install "https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-$(uname -m)/pgdg-redhat-repo-latest.noarch.rpm" \
+ && dnf -y install postgresql17-server pgvector_17 python3 \
+ && dnf clean all
+
+ENV PGDATA=/var/lib/pgsql/17/data \
+    PATH=/usr/pgsql-17/bin:$PATH
+
+COPY --chown=postgres:postgres load/ /opt/atlas-load/
+USER postgres
+RUN bash /opt/atlas-load/build-db.sh
+
+EXPOSE 5432
+STOPSIGNAL SIGINT
+HEALTHCHECK --interval=10s --timeout=5s --retries=6 CMD pg_isready -d ionis -U atlas_ro -h 127.0.0.1 || exit 1
+CMD ["postgres", "-D", "/var/lib/pgsql/17/data"]
+
+LABEL org.opencontainers.image.title="ionis-ai-atlas-db" \
+      org.opencontainers.image.description="IONIS Atlas database: PostgreSQL 17 + pgvector with the published IONIS data" \
+      org.opencontainers.image.source="https://github.com/IONIS-AI/ionis-ai-atlas" \
+      org.opencontainers.image.licenses="Apache-2.0"
