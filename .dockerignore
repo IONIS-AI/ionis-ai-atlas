@@ -6,3 +6,5 @@
 **/*.pyc
 **/.pytest_cache
 .git
+.venv
+.run
