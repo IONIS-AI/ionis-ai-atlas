@@ -60,3 +60,8 @@ def test_docs_page_has_no_inline_script(local):
 def test_no_cors(local):
     r = local.get("/api/v1/openapi.json", headers={"Origin": "http://evil.example"})
     assert "access-control-allow-origin" not in r.headers
+
+
+def test_head_on_pages_is_not_405(local):
+    """A proxy or uptime check probes with HEAD; the page route must answer it like GET."""
+    assert local.head("/").status_code == local.get("/").status_code != 405

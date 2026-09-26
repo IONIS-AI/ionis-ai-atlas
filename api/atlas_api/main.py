@@ -286,7 +286,8 @@ if (STATIC / "web" / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=STATIC / "web" / "assets"), name="assets")
 
 
-@app.get("/{path:path}", include_in_schema=False)
+# HEAD as well as GET: a reverse proxy or uptime checker probing "/" should not get 405.
+@app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
 def spa(path: str):
     if path.startswith("api/"):
         raise HTTPException(404)
