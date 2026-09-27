@@ -8,6 +8,9 @@
 #                    ki7mt/ionis-ai-atlas-dev:<kind>-<sha> (one private repository; kind = app | db).
 #                    CHANNEL=prod make publish on a commit tagged vX.Y.Z: public ki7mt/ionis-ai-atlas:X.Y.Z
 #   make verify-pull TAG=<sha>   pull from docker.io and prove the published compose file runs
+#   make release-dryrun   run the whole prod publish path against a throwaway repository, then
+#                    delete it. Run it BEFORE tagging: a release should never be this code's
+#                    first execution.
 #   make check-browser  render both pages in headless Chromium and fail on anything the CSP blocks
 #                    (needs the stack up: `make dev` or `make up` first)
 ENGINE ?= podman
@@ -15,7 +18,7 @@ TAG    ?= dev
 LOCAL  := ATLAS_APP_IMAGE=localhost/ionis-ai-atlas:$(TAG) ATLAS_DB_IMAGE=localhost/ionis-ai-atlas-db:$(TAG)
 PY     ?= python3.12
 
-.PHONY: images openapi check-vendor test up down dev dev-down publish verify-pull check-browser
+.PHONY: images openapi check-vendor test up down dev dev-down publish verify-pull check-browser release-dryrun
 
 check-vendor:
 	scripts/sync-from-ionis-core.sh --check
@@ -51,6 +54,9 @@ dev-down:
 
 publish:
 	scripts/publish.sh
+
+release-dryrun:
+	DRYRUN=1 CHANNEL=prod scripts/publish.sh
 
 verify-pull:
 	scripts/verify-pull.sh $(TAG)
