@@ -48,7 +48,9 @@ for image in "$@"; do
   name="$(basename "${image%%[:@]*}")"
   if [[ "$image" == localhost/* ]]; then
     # A local build: the scanner's container cannot see the host's image store, so hand it a tarball.
-    "$ENGINE" save -q -o "$WORK/$name.tar" "$image"
+    # No -q: podman save accepts it, docker save does not ("unknown shorthand flag: 'q'"), and
+    # this runs on the publisher, which is Docker Desktop. -o is already quiet on stdout.
+    "$ENGINE" save -o "$WORK/$name.tar" "$image"
     source=(--input "/work/$name.tar")
     echo "== $image (local build)"
   else
