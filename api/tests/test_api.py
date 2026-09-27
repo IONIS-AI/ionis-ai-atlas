@@ -238,10 +238,14 @@ def test_dxcc_survives_losing_entity_names(client, dropped):
 
 
 def test_modes_survive_losing_descriptions_and_keep_submodes(client, dropped):
+    # Over EVERY row, not one: most modes have no description in ADIF (MFSK among them), so a single
+    # row can't tell the fallback from the real value. A few do carry one, so this fails if the
+    # dropped column is still being read (Watson, #49).
+    assert any(m["description"] for m in client.get("/api/v1/adif/modes").json()), "no mode has a description to lose"
     dropped("mode", "description")
     r = client.get("/api/v1/adif/modes")
     mfsk = next(m for m in r.json() if m["mode"] == "MFSK")
-    assert r.status_code == 200 and mfsk["description"] is None and "FT4" in mfsk["submodes"]
+    assert r.status_code == 200 and {m["description"] for m in r.json()} == {None} and "FT4" in mfsk["submodes"]
 
 
 @pytest.mark.parametrize("path,table", [("/api/v1/adif/contests", "contest_id"), ("/api/v1/adif/fields", "field"),
