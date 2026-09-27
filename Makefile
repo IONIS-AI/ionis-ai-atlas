@@ -13,6 +13,7 @@
 #                    first execution.
 #   make scan        scan the local images for vulnerabilities; fails on any fixable HIGH or CRITICAL
 #                    (scripts/scan.sh holds the threshold; the nightly workflow scans the release)
+#   make check-ui    drive the ADIF section in headless Chromium: paging, search, names (R15, R16)
 #   make check-browser  render both pages in headless Chromium and fail on anything the CSP blocks
 #                    (needs the stack up: `make dev` or `make up` first)
 ENGINE ?= podman
@@ -20,7 +21,7 @@ TAG    ?= dev
 LOCAL  := ATLAS_APP_IMAGE=localhost/ionis-ai-atlas:$(TAG) ATLAS_DB_IMAGE=localhost/ionis-ai-atlas-db:$(TAG)
 PY     ?= python3.12
 
-.PHONY: images openapi check-vendor test up down dev dev-down publish verify-pull check-browser release-dryrun scan
+.PHONY: images openapi check-vendor test up down dev dev-down publish verify-pull check-browser check-ui release-dryrun scan
 
 check-vendor:
 	scripts/sync-from-ionis-core.sh --check
@@ -75,4 +76,11 @@ check-browser:
 	  uv run --with playwright python scripts/check-browser.py $(BASE); \
 	else \
 	  $(PY) scripts/check-browser.py $(BASE); \
+	fi
+
+check-ui:
+	@if command -v uv >/dev/null; then \
+	  uv run --with playwright python scripts/check-ui.py $(BASE); \
+	else \
+	  $(PY) scripts/check-ui.py $(BASE); \
 	fi

@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from psycopg import sql
@@ -109,6 +109,66 @@ def version_or_current(adif_version: Optional[str]) -> str:
 
 VersionParam = Query(None, description="ADIF version, e.g. 3.1.7. Defaults to the lab's current version.")
 
+# --- Lists: paged and filtered on the server (SPEC R15) -----------------------------------------
+# Every list endpoint takes `limit`, `offset` and `q`, and filters, counts and pages in SQL, BEFORE
+# the page is cut. A filter applied in the browser sees only the page it was given, so once pages
+# exist, client-side filtering silently misses matches.
+#
+# ADDITIVE, as the contract requires: without `limit` an endpoint returns every row, exactly as it
+# did before R15. Endpoints that return a bare JSON array cannot grow a `total` field without
+# changing their shape, so the count travels in headers, the convention for paged arrays:
+# `X-Total-Count` (rows matching the filters) and `Link: <...>; rel="next"` while more remain.
+# Reference data pages by OFFSET: it is thousands of rows. Collection data will use a keyset
+# cursor, because OFFSET reads every row it skips.
+MAX_LIMIT = 1000
+LimitParam = Query(None, ge=1, le=MAX_LIMIT,
+                   description=f"Rows per page, 1 to {MAX_LIMIT}. Omit to get every row (the pre-R15 behaviour).")
+OffsetParam = Query(0, ge=0, description="Rows to skip, for the page after `limit` rows.")
+SearchParam = Query(None, min_length=1, max_length=100,
+                    description="Case-insensitive text search across the listed columns, applied before paging.")
+PAGED = {200: {"headers": {
+    "X-Total-Count": {"description": "Rows matching the filters, across all pages", "schema": {"type": "integer"}},
+    "Link": {"description": 'Present while more rows remain: `<url>; rel="next"`', "schema": {"type": "string"}},
+}}}
+
+
+def _contains(q: str) -> str:
+    """`q` as a literal substring for ILIKE: its own % and _ must not act as wildcards."""
+    return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def paged(request: Request, response: Response, base: str | sql.Composable, args: tuple, columns: list[str],
+          order: list[str], limit: Optional[int], offset: int, q: Optional[str],
+          where: Optional[dict[str, str]] = None) -> tuple[list[dict], int]:
+    """Run `base` (a SELECT without ORDER BY) as a subquery; search `columns` for `q`, apply exact
+    `where` filters, count, order by `order` (unique, so pages never overlap) and page. Column names
+    here come from code or from information_schema, never from a request, and are quoted anyway."""
+    base = sql.SQL(base) if isinstance(base, str) else base
+    conds, params = [], list(args)
+    if q:
+        conds.append(sql.SQL("({})").format(sql.SQL(" OR ").join(
+            sql.SQL("t.{}::text ILIKE %s ESCAPE '\\'").format(sql.Identifier(c)) for c in columns)))
+        params += [_contains(q)] * len(columns)
+    for col, val in (where or {}).items():
+        conds.append(sql.SQL("t.{}::text = %s").format(sql.Identifier(col)))
+        params.append(val)
+    filt = sql.SQL(" WHERE ") + sql.SQL(" AND ").join(conds) if conds else sql.SQL("")
+    total = rows(sql.SQL("SELECT count(*) AS n FROM ({}) t").format(base) + filt, tuple(params))[0]["n"]
+    page = (sql.SQL("SELECT * FROM ({}) t").format(base) + filt + sql.SQL(" ORDER BY ")
+            + sql.SQL(", ").join(sql.SQL("t.{}").format(sql.Identifier(o)) for o in order))
+    if limit is not None:
+        page += sql.SQL(" LIMIT %s OFFSET %s")
+        params += [limit, offset]
+    elif offset:
+        page += sql.SQL(" OFFSET %s")
+        params.append(offset)
+    data = rows(page, tuple(params))
+    response.headers["X-Total-Count"] = str(total)
+    if limit is not None and offset + limit < total:
+        nxt = request.url.include_query_params(limit=limit, offset=offset + limit)
+        response.headers["Link"] = f'<{nxt.path}?{nxt.query}>; rel="next"'
+    return data, total
+
 
 @app.get(f"{API}/health", response_model=Health, tags=["service"])
 def health() -> dict:
@@ -140,72 +200,83 @@ def current() -> dict:
     return got[0]
 
 
-@app.get(f"{API}/adif/bands", response_model=list[Band], tags=["adif"])
-def bands(adif_version: Optional[str] = VersionParam) -> list[dict]:
-    """ADIF's Band enumeration: name and frequency range in MHz, in frequency order."""
+# The four routes below are curated views published before R16. They stay (the contract is
+# additive), and each names its canonical route: /adif/enumerations/<table> (SPEC R16).
+@app.get(f"{API}/adif/bands", response_model=list[Band], tags=["adif"], responses=PAGED)
+def bands(request: Request, response: Response, adif_version: Optional[str] = VersionParam,
+          limit: Optional[int] = LimitParam, offset: int = OffsetParam, q: Optional[str] = SearchParam) -> list[dict]:
+    """ADIF's Band enumeration: name and frequency range in MHz, in frequency order.
+    Curated view of `/adif/enumerations/band`."""
     v = version_or_current(adif_version)
-    return rows(
-        "SELECT band, lower_freq_mhz, upper_freq_mhz, coalesce(import_only, false) AS import_only "
-        "FROM adif.band WHERE adif_version = %s ORDER BY lower_freq_mhz",
-        (v,),
-    )
+    data, _ = paged(request, response,
+                    "SELECT band, lower_freq_mhz, upper_freq_mhz, coalesce(import_only, false) AS import_only "
+                    "FROM adif.band WHERE adif_version = %s", (v,),
+                    ["band", "lower_freq_mhz", "upper_freq_mhz"], ["lower_freq_mhz"], limit, offset, q)
+    return data
 
 
-@app.get(f"{API}/adif/modes", response_model=list[Mode], tags=["adif"])
-def modes(adif_version: Optional[str] = VersionParam) -> list[dict]:
-    """ADIF's Mode enumeration, each with its submodes (e.g. MFSK → FT4)."""
+@app.get(f"{API}/adif/modes", response_model=list[Mode], tags=["adif"], responses=PAGED)
+def modes(request: Request, response: Response, adif_version: Optional[str] = VersionParam,
+          limit: Optional[int] = LimitParam, offset: int = OffsetParam, q: Optional[str] = SearchParam) -> list[dict]:
+    """ADIF's Mode enumeration, each with its submodes (e.g. MFSK → FT4). A search matches submodes
+    too, so `q=ft4` finds MFSK. Curated view of `/adif/enumerations/mode`."""
     v = version_or_current(adif_version)
-    return rows(
-        "SELECT m.mode, m.description, coalesce(m.import_only, false) AS import_only, "
-        "coalesce(array_agg(s.submode ORDER BY s.submode) FILTER (WHERE s.submode IS NOT NULL), '{}') AS submodes "
-        "FROM adif.mode m LEFT JOIN adif.submode s ON s.adif_version = m.adif_version AND s.mode = m.mode "
-        "WHERE m.adif_version = %s GROUP BY m.mode, m.description, m.import_only ORDER BY m.mode",
-        (v,),
-    )
+    data, _ = paged(request, response,
+                    "SELECT m.mode, m.description, coalesce(m.import_only, false) AS import_only, "
+                    "coalesce(array_agg(s.submode ORDER BY s.submode) FILTER (WHERE s.submode IS NOT NULL), '{}') AS submodes "
+                    "FROM adif.mode m LEFT JOIN adif.submode s ON s.adif_version = m.adif_version AND s.mode = m.mode "
+                    "WHERE m.adif_version = %s GROUP BY m.mode, m.description, m.import_only", (v,),
+                    ["mode", "description", "submodes"], ["mode"], limit, offset, q)
+    return data
 
 
-@app.get(f"{API}/adif/dxcc", response_model=list[DxccEntity], tags=["adif"])
-def dxcc(adif_version: Optional[str] = VersionParam) -> list[dict]:
-    """ADIF's DXCC Entity Code enumeration, deleted entities included and marked."""
+@app.get(f"{API}/adif/dxcc", response_model=list[DxccEntity], tags=["adif"], responses=PAGED)
+def dxcc(request: Request, response: Response, adif_version: Optional[str] = VersionParam,
+         limit: Optional[int] = LimitParam, offset: int = OffsetParam, q: Optional[str] = SearchParam) -> list[dict]:
+    """ADIF's DXCC Entity Code enumeration, deleted entities included and marked.
+    Curated view of `/adif/enumerations/dxcc_entity_code`."""
     v = version_or_current(adif_version)
-    return rows(
-        "SELECT entity_code, entity_name, coalesce(deleted, false) AS deleted "
-        "FROM adif.dxcc_entity_code WHERE adif_version = %s ORDER BY entity_code",
-        (v,),
-    )
+    data, _ = paged(request, response,
+                    "SELECT entity_code, entity_name, coalesce(deleted, false) AS deleted "
+                    "FROM adif.dxcc_entity_code WHERE adif_version = %s", (v,),
+                    ["entity_code", "entity_name"], ["entity_code"], limit, offset, q)
+    return data
 
 
-@app.get(f"{API}/adif/contests", response_model=list[Contest], tags=["adif"])
-def contests(adif_version: Optional[str] = VersionParam) -> list[dict]:
-    """ADIF's Contest_ID enumeration."""
+@app.get(f"{API}/adif/contests", response_model=list[Contest], tags=["adif"], responses=PAGED)
+def contests(request: Request, response: Response, adif_version: Optional[str] = VersionParam,
+             limit: Optional[int] = LimitParam, offset: int = OffsetParam, q: Optional[str] = SearchParam) -> list[dict]:
+    """ADIF's Contest_ID enumeration. Curated view of `/adif/enumerations/contest_id`."""
     v = version_or_current(adif_version)
-    return rows(
-        "SELECT contest_id, description, coalesce(import_only, false) AS import_only "
-        "FROM adif.contest_id WHERE adif_version = %s ORDER BY contest_id",
-        (v,),
-    )
+    data, _ = paged(request, response,
+                    "SELECT contest_id, description, coalesce(import_only, false) AS import_only "
+                    "FROM adif.contest_id WHERE adif_version = %s", (v,),
+                    ["contest_id", "description"], ["contest_id"], limit, offset, q)
+    return data
 
 
-@app.get(f"{API}/adif/fields", response_model=list[Field], tags=["adif"])
-def fields(adif_version: Optional[str] = VersionParam) -> list[dict]:
-    """ADIF's fields: the vocabulary every IONIS-AI column is defined against."""
+@app.get(f"{API}/adif/fields", response_model=list[Field], tags=["adif"], responses=PAGED)
+def fields(request: Request, response: Response, adif_version: Optional[str] = VersionParam,
+           limit: Optional[int] = LimitParam, offset: int = OffsetParam, q: Optional[str] = SearchParam) -> list[dict]:
+    """ADIF's fields (`fields.json`): the vocabulary every IONIS-AI column is defined against."""
     v = version_or_current(adif_version)
-    return rows(
-        "SELECT field_name, data_type, enumeration, description, "
-        "coalesce(import_only, false) AS import_only FROM adif.field WHERE adif_version = %s ORDER BY field_name",
-        (v,),
-    )
+    data, _ = paged(request, response,
+                    "SELECT field_name, data_type, enumeration, description, "
+                    "coalesce(import_only, false) AS import_only FROM adif.field WHERE adif_version = %s", (v,),
+                    ["field_name", "data_type", "enumeration", "description"], ["field_name"], limit, offset, q)
+    return data
 
 
-@app.get(f"{API}/adif/datatypes", response_model=list[DataType], tags=["adif"])
-def datatypes(adif_version: Optional[str] = VersionParam) -> list[dict]:
-    """ADIF's data types (GridSquare, Date, Number, ...)."""
+@app.get(f"{API}/adif/datatypes", response_model=list[DataType], tags=["adif"], responses=PAGED)
+def datatypes(request: Request, response: Response, adif_version: Optional[str] = VersionParam,
+              limit: Optional[int] = LimitParam, offset: int = OffsetParam, q: Optional[str] = SearchParam) -> list[dict]:
+    """ADIF's data types (`datatypes.json`: GridSquare, Date, Number, ...)."""
     v = version_or_current(adif_version)
-    return rows(
-        "SELECT data_type_name, data_type_indicator, description, minimum_value, maximum_value, "
-        "coalesce(import_only, false) AS import_only FROM adif.datatype WHERE adif_version = %s ORDER BY data_type_name",
-        (v,),
-    )
+    data, _ = paged(request, response,
+                    "SELECT data_type_name, data_type_indicator, description, minimum_value, maximum_value, "
+                    "coalesce(import_only, false) AS import_only FROM adif.datatype WHERE adif_version = %s", (v,),
+                    ["data_type_name", "data_type_indicator", "description"], ["data_type_name"], limit, offset, q)
+    return data
 
 
 # Tables in the adif schema that are not enumerations.
@@ -225,35 +296,62 @@ def enumeration_tables() -> dict[str, str]:
     return out
 
 
+def source_file(table: str) -> str:
+    """The file in ADIF's resource zip this enumeration is published as (SPEC R16)."""
+    return f"enumerations_{table}.json"
+
+
 @app.get(f"{API}/adif/enumerations", response_model=list[EnumerationSummary], tags=["adif"])
 def enumerations(adif_version: Optional[str] = VersionParam) -> list[dict]:
-    """Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x)."""
+    """Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x), its
+    canonical route segment (`table`) and the file ADIF publishes it as."""
     v = version_or_current(adif_version)
     out = []
     for name, t in enumeration_tables().items():
         c = rows(sql.SQL("SELECT count(*) AS n, count(*) FILTER (WHERE import_only) AS io FROM adif.{} "
                          "WHERE adif_version = %s").format(sql.Identifier(t)), (v,))[0]
-        out.append({"name": name, "table": t, "records": c["n"], "import_only_records": c["io"]})
+        out.append({"name": name, "table": t, "file": source_file(t), "records": c["n"], "import_only_records": c["io"]})
     return sorted(out, key=lambda e: e["name"].lower())
 
 
-@app.get(f"{API}/adif/enumerations/{{name}}", response_model=Enumeration, tags=["adif"])
-def enumeration(name: str, adif_version: Optional[str] = VersionParam) -> dict:
-    """One ADIF enumeration, every record, with the columns ADIF defines for it. `name` is ADIF's
-    enumeration name (e.g. Propagation_Mode) or its table name; anything else is 404."""
+_RESERVED = {"adif_version", "limit", "offset", "q"}
+
+
+@app.get(f"{API}/adif/enumerations/{{name}}", response_model=Enumeration, tags=["adif"], responses=PAGED)
+def enumeration(name: str, request: Request, response: Response, adif_version: Optional[str] = VersionParam,
+                limit: Optional[int] = LimitParam, offset: int = OffsetParam, q: Optional[str] = SearchParam) -> dict:
+    """One ADIF enumeration, with the columns ADIF defines for it. **The canonical route segment is
+    the table name**, ADIF's name in lower case (e.g. `secondary_administrative_subdivision`), which
+    is also the suffix of the file ADIF publishes it as; ADIF's own spelling
+    (`Secondary_Administrative_Subdivision`) is accepted too, in any case. Anything else is 404.
+
+    Paged with `limit` / `offset`, searched with `q`, and **filtered exactly on any of its columns**
+    by name, e.g. `?dxcc_entity_code=15&deleted=false`. A filter naming a column the enumeration
+    does not have is refused (400) rather than ignored."""
     v = version_or_current(adif_version)
     tables = enumeration_tables()
     by_table = {t: n for n, t in tables.items()}
-    table = tables.get(name) or (name if name in by_table else None)
+    key = name.lower()
+    table = key if key in by_table else next((t for n, t in tables.items() if n.lower() == key), None)
     if table is None:
         raise HTTPException(404, f"No ADIF enumeration named {name!r}")
     cols = rows(
         "SELECT column_name AS name, data_type AS type FROM information_schema.columns "
         "WHERE table_schema = 'adif' AND table_name = %s AND column_name NOT IN ('adif_version', 'record') "
         "ORDER BY ordinal_position", (table,))
-    data = rows(sql.SQL("SELECT {} FROM adif.{} WHERE adif_version = %s ORDER BY record_key").format(
-        sql.SQL(", ").join(sql.Identifier(c["name"]) for c in cols), sql.Identifier(table)), (v,))
-    return {"name": by_table[table], "adif_version": v, "columns": cols, "rows": data}
+    names = [c["name"] for c in cols]
+    where = {}
+    for k, val in request.query_params.multi_items():
+        if k in _RESERVED:
+            continue
+        if k not in names:
+            raise HTTPException(400, f"{by_table[table]} has no column {k!r}; filterable: {', '.join(names)}")
+        where[k] = val
+    base = sql.SQL("SELECT {} FROM adif.{} WHERE adif_version = %s").format(
+        sql.SQL(", ").join(sql.Identifier(c) for c in names), sql.Identifier(table))
+    data, total = paged(request, response, base, (v,), names, ["record_key"], limit, offset, q, where)
+    return {"name": by_table[table], "table": table, "file": source_file(table), "adif_version": v,
+            "columns": cols, "rows": data, "total": total, "limit": limit, "offset": offset}
 
 
 # --- Swagger UI, self-hosted -------------------------------------------------------------------

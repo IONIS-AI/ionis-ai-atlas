@@ -1,8 +1,9 @@
-// The shell (SPEC "The shell"): primary navigation across the top, a contextual sidebar on the left,
-// the content region in the middle. The frame persists; only the content region changes. Every
-// view is addressable by URL, and its filter state lives in the URL (R11).
+// The shell (SPEC "The shell"): sections across the top; on the left, navigation only, named as the
+// spec names things (R16); the content region holds each view with its own search and paging (R15).
+// The frame persists; only the content region changes. Every view is addressable by URL, and its
+// search and page live in the URL (R11).
 import { useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useParams, useSearchParams } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { api, type EnumerationSummary, type Release } from "./api/client";
 import { AdifView, DEFINITIONS } from "./adif/AdifView";
 
@@ -24,17 +25,30 @@ export function App() {
         <a className="apidocs" href="/api/docs">API</a>
       </header>
       <Routes>
-        <Route path="/" element={<Navigate to="/adif/band" replace />} />
-        <Route path="/adif" element={<Navigate to="/adif/band" replace />} />
-        <Route path="/adif/:view" element={<AdifSection />} />
+        <Route path="/" element={<Navigate to="/adif/enumerations/band" replace />} />
+        <Route path="/adif" element={<Navigate to="/adif/enumerations/band" replace />} />
+        <Route path="/adif/enumerations" element={<Navigate to="/adif/enumerations/band" replace />} />
+        {/* Routes named as the spec names things (R16): the segment is ADIF's name in lower case. */}
+        <Route path="/adif/fields" element={<AdifSection view="fields" />} />
+        <Route path="/adif/datatypes" element={<AdifSection view="datatypes" />} />
+        <Route path="/adif/enumerations/:table" element={<AdifSection />} />
+        {/* Links from before R16 (/adif/<table>) keep working. */}
+        <Route path="/adif/:legacy" element={<LegacyAdifLink />} />
         <Route path="*" element={<main className="content"><p className="state">No such page.</p></main>} />
       </Routes>
     </div>
   );
 }
 
-function AdifSection() {
-  const { view = "band" } = useParams();
+function LegacyAdifLink() {
+  const { legacy = "" } = useParams();
+  const { search } = useLocation();
+  return <Navigate to={`/adif/enumerations/${legacy}${search}`} replace />;
+}
+
+function AdifSection({ view: fixed }: { view?: string }) {
+  const { table } = useParams();
+  const view = fixed ?? table ?? "band";
   const [params, setParams] = useSearchParams();
   const [releases, setReleases] = useState<Release[] | null>(null);
   const [current, setCurrent] = useState<string | null>(null);
@@ -50,14 +64,15 @@ function AdifSection() {
     if (!version) return;
     api.GET("/api/v1/adif/enumerations", { params: { query: { adif_version: version } } }).then(({ data }) => setEnums(data ?? []));
   }, [version]);
-  const query = params.get("q") ?? "";
   const set = (key: string, value: string) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
     else next.delete(key);
     setParams(next, { replace: true });
   };
-  const search = params.toString();
+  // Moving to another table keeps the chosen ADIF version and nothing else: a search, page or page
+  // size belongs to the table it was set on.
+  const search = params.get("v") ? `?v=${params.get("v")}` : "";
 
   return (
     <>
@@ -72,11 +87,6 @@ function AdifSection() {
             ))}
           </select>
         </label>
-        <label className="control">
-          <span>Filter</span>
-          <input type="search" value={query} placeholder="e.g. FT4, 20m, Bouvet"
-            onChange={(e) => set("q", e.target.value)} />
-        </label>
         <nav className="views" aria-label="ADIF definitions">
           <span className="group">Definitions</span>
           {DEFINITIONS.map((v) => (
@@ -88,7 +98,7 @@ function AdifSection() {
         <nav className="views" aria-label="ADIF enumerations">
           <span className="group">Enumerations ({enums.length})</span>
           {enums.map((e) => (
-            <NavLink key={e.table} to={{ pathname: `/adif/${e.table}`, search }} className={({ isActive }) => (isActive ? "active" : "")}>
+            <NavLink key={e.table} to={{ pathname: `/adif/enumerations/${e.table}`, search }} className={({ isActive }) => (isActive ? "active" : "")}>
               <span>{e.name.replace(/_/g, " ")}</span><span className="n">{e.records}</span>
             </NavLink>
           ))}
@@ -96,7 +106,7 @@ function AdifSection() {
         <p className="note">ADIF {version ?? "…"} as published by adif.org, loaded unmodified.</p>
       </aside>
       <main className="content">
-        {version ? <AdifView view={view} version={version} query={query} /> : <p className="state">Loading…</p>}
+        {version ? <AdifView view={view} version={version} /> : <p className="state">Loading…</p>}
       </main>
     </>
   );

@@ -91,3 +91,101 @@ def test_unknown_or_hostile_enumeration_name_is_404(client):
 
 def test_datatypes(client):
     assert len(client.get("/api/v1/adif/datatypes").json()) == 28
+
+
+# --- R15: lists paged and filtered on the server ----------------------------------------------
+PAS = "/api/v1/adif/enumerations/primary_administrative_subdivision"
+
+
+def test_a_page_says_how_many_rows_there_are_in_all(client):
+    r = client.get(PAS, params={"limit": 100})
+    body = r.json()
+    assert len(body["rows"]) == 100 and body["total"] == 1965 and body["limit"] == 100 and body["offset"] == 0
+    assert r.headers["X-Total-Count"] == "1965"
+    assert 'rel="next"' in r.headers["Link"] and "offset=100" in r.headers["Link"]
+
+
+def test_walking_the_pages_returns_every_row_once(client):
+    """Pages must neither overlap nor skip: the order is unique, and the walk reassembles the table."""
+    whole = client.get(PAS).json()["rows"]
+    walked, offset = [], 0
+    while True:
+        page = client.get(PAS, params={"limit": 300, "offset": offset})
+        walked += page.json()["rows"]
+        if "Link" not in page.headers:
+            break
+        offset += 300
+    assert len(walked) == len(whole) == 1965
+    assert walked == whole
+    assert len({r["record_key"] for r in walked}) == 1965
+
+
+def test_the_last_page_has_no_next_link(client):
+    r = client.get(PAS, params={"limit": 100, "offset": 1900})
+    assert len(r.json()["rows"]) == 65 and "Link" not in r.headers
+
+
+def test_search_runs_before_paging_so_the_total_is_of_matches(client):
+    r = client.get("/api/v1/adif/enumerations/dxcc_entity_code", params={"q": "bouvet", "limit": 10})
+    names = [x["entity_name"] for x in r.json()["rows"]]
+    assert r.json()["total"] == len(names) >= 1 and all("BOUVET" in n.upper() for n in names)
+
+
+def test_search_wildcards_are_literal(client):
+    # % and _ must not act as ILIKE wildcards: "%" alone would otherwise match every row.
+    assert client.get("/api/v1/adif/enumerations/dxcc_entity_code", params={"q": "%"}).json()["total"] == 0
+
+
+def test_a_mode_search_finds_it_by_its_submode(client):
+    r = client.get("/api/v1/adif/modes", params={"q": "ft4"})
+    assert [m["mode"] for m in r.json()] == ["MFSK"] and r.headers["X-Total-Count"] == "1"
+
+
+def test_filter_on_a_column_exactly(client):
+    r = client.get(PAS, params={"dxcc_entity_code": "15", "limit": 1000}).json()
+    assert r["total"] == len(r["rows"]) > 0 and {x["dxcc_entity_code"] for x in r["rows"]} == {15}
+
+
+def test_filter_on_a_column_the_enumeration_does_not_have_is_refused(client):
+    r = client.get(PAS, params={"no_such_column": "1"})
+    assert r.status_code == 400 and "no column 'no_such_column'" in r.json()["detail"]
+
+
+def test_limit_is_capped(client):
+    assert client.get(PAS, params={"limit": 1001}).status_code == 422
+    assert client.get(PAS, params={"limit": 0}).status_code == 422
+
+
+@pytest.mark.parametrize("path,count", [
+    ("/api/v1/adif/bands", 33), ("/api/v1/adif/modes", 91), ("/api/v1/adif/dxcc", 403),
+    ("/api/v1/adif/contests", 256), ("/api/v1/adif/fields", 186), ("/api/v1/adif/datatypes", 28),
+])
+def test_without_limit_arrays_return_everything_as_before(client, path, count):
+    """The contract is additive: a pre-R15 caller gets the whole list, and now a count header too."""
+    r = client.get(path)
+    assert len(r.json()) == count and r.headers["X-Total-Count"] == str(count) and "Link" not in r.headers
+
+
+def test_array_endpoints_page_too(client):
+    r = client.get("/api/v1/adif/fields", params={"limit": 50, "offset": 150})
+    assert len(r.json()) == 36 and r.headers["X-Total-Count"] == "186" and "Link" not in r.headers
+
+
+# --- R16: one name per thing, from the spec ----------------------------------------------------
+def test_the_canonical_route_is_the_table_name_and_names_its_file(client):
+    r = client.get("/api/v1/adif/enumerations/secondary_administrative_subdivision").json()
+    assert r["name"] == "Secondary_Administrative_Subdivision"
+    assert r["table"] == "secondary_administrative_subdivision"
+    assert r["file"] == "enumerations_secondary_administrative_subdivision.json"
+    assert r["total"] == 58
+
+
+@pytest.mark.parametrize("spelling", ["Secondary_Administrative_Subdivision", "SECONDARY_ADMINISTRATIVE_SUBDIVISION",
+                                      "Secondary_administrative_subdivision"])
+def test_adifs_own_spelling_is_accepted_in_any_case(client, spelling):
+    assert client.get(f"/api/v1/adif/enumerations/{spelling}").json()["table"] == "secondary_administrative_subdivision"
+
+
+def test_the_summary_lists_route_segment_and_file_for_every_enumeration(client):
+    for e in client.get("/api/v1/adif/enumerations").json():
+        assert e["file"] == f"enumerations_{e['table']}.json" and e["table"] == e["name"].lower()

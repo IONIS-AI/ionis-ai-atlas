@@ -78,7 +78,8 @@ class DataType(BaseModel):
 
 class EnumerationSummary(BaseModel):
     name: str
-    table: str
+    table: str           # the canonical route segment: /adif/enumerations/<table> (SPEC R16)
+    file: str            # the file ADIF publishes it as, e.g. enumerations_band.json
     records: int
     import_only_records: int
 
@@ -89,7 +90,12 @@ class Column(BaseModel):
 
 
 class Enumeration(BaseModel):
-    name: str
+    name: str            # ADIF's name, e.g. Secondary_Administrative_Subdivision
+    table: str           # the canonical route segment (SPEC R16)
+    file: str            # the file ADIF publishes it as
     adif_version: str
     columns: list[Column]
     rows: list[dict[str, Any]]
+    total: int           # rows matching the filters, across all pages (SPEC R15)
+    limit: Optional[int] # the page size asked for; null when every row was returned
+    offset: int

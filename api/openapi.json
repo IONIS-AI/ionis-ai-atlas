@@ -212,9 +212,28 @@
             "title": "Columns",
             "type": "array"
           },
+          "file": {
+            "title": "File",
+            "type": "string"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
           },
           "rows": {
             "items": {
@@ -223,19 +242,36 @@
             },
             "title": "Rows",
             "type": "array"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
           "name",
+          "table",
+          "file",
           "adif_version",
           "columns",
-          "rows"
+          "rows",
+          "total",
+          "limit",
+          "offset"
         ],
         "title": "Enumeration",
         "type": "object"
       },
       "EnumerationSummary": {
         "properties": {
+          "file": {
+            "title": "File",
+            "type": "string"
+          },
           "import_only_records": {
             "title": "Import Only Records",
             "type": "integer"
@@ -256,6 +292,7 @@
         "required": [
           "name",
           "table",
+          "file",
           "records",
           "import_only_records"
         ],
@@ -484,7 +521,7 @@
   "paths": {
     "/api/v1/adif/bands": {
       "get": {
-        "description": "ADIF's Band enumeration: name and frequency range in MHz, in frequency order.",
+        "description": "ADIF's Band enumeration: name and frequency range in MHz, in frequency order.\nCurated view of `/adif/enumerations/band`.",
         "operationId": "bands_api_v1_adif_bands_get",
         "parameters": [
           {
@@ -504,6 +541,59 @@
               "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
               "title": "Adif Version"
             }
+          },
+          {
+            "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Rows to skip, for the page after `limit` rows.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip, for the page after `limit` rows.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Case-insensitive text search across the listed columns, applied before paging.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive text search across the listed columns, applied before paging.",
+              "title": "Q"
+            }
           }
         ],
         "responses": {
@@ -519,7 +609,21 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "Link": {
+                "description": "Present while more rows remain: `<url>; rel=\"next\"`",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Total-Count": {
+                "description": "Rows matching the filters, across all pages",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -540,7 +644,7 @@
     },
     "/api/v1/adif/contests": {
       "get": {
-        "description": "ADIF's Contest_ID enumeration.",
+        "description": "ADIF's Contest_ID enumeration. Curated view of `/adif/enumerations/contest_id`.",
         "operationId": "contests_api_v1_adif_contests_get",
         "parameters": [
           {
@@ -560,6 +664,59 @@
               "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
               "title": "Adif Version"
             }
+          },
+          {
+            "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Rows to skip, for the page after `limit` rows.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip, for the page after `limit` rows.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Case-insensitive text search across the listed columns, applied before paging.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive text search across the listed columns, applied before paging.",
+              "title": "Q"
+            }
           }
         ],
         "responses": {
@@ -575,7 +732,21 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "Link": {
+                "description": "Present while more rows remain: `<url>; rel=\"next\"`",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Total-Count": {
+                "description": "Rows matching the filters, across all pages",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -618,7 +789,7 @@
     },
     "/api/v1/adif/datatypes": {
       "get": {
-        "description": "ADIF's data types (GridSquare, Date, Number, ...).",
+        "description": "ADIF's data types (`datatypes.json`: GridSquare, Date, Number, ...).",
         "operationId": "datatypes_api_v1_adif_datatypes_get",
         "parameters": [
           {
@@ -638,6 +809,59 @@
               "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
               "title": "Adif Version"
             }
+          },
+          {
+            "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Rows to skip, for the page after `limit` rows.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip, for the page after `limit` rows.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Case-insensitive text search across the listed columns, applied before paging.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive text search across the listed columns, applied before paging.",
+              "title": "Q"
+            }
           }
         ],
         "responses": {
@@ -653,7 +877,21 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "Link": {
+                "description": "Present while more rows remain: `<url>; rel=\"next\"`",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Total-Count": {
+                "description": "Rows matching the filters, across all pages",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -674,7 +912,7 @@
     },
     "/api/v1/adif/dxcc": {
       "get": {
-        "description": "ADIF's DXCC Entity Code enumeration, deleted entities included and marked.",
+        "description": "ADIF's DXCC Entity Code enumeration, deleted entities included and marked.\nCurated view of `/adif/enumerations/dxcc_entity_code`.",
         "operationId": "dxcc_api_v1_adif_dxcc_get",
         "parameters": [
           {
@@ -694,6 +932,59 @@
               "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
               "title": "Adif Version"
             }
+          },
+          {
+            "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Rows to skip, for the page after `limit` rows.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip, for the page after `limit` rows.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Case-insensitive text search across the listed columns, applied before paging.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive text search across the listed columns, applied before paging.",
+              "title": "Q"
+            }
           }
         ],
         "responses": {
@@ -709,7 +1000,21 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "Link": {
+                "description": "Present while more rows remain: `<url>; rel=\"next\"`",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Total-Count": {
+                "description": "Rows matching the filters, across all pages",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -730,7 +1035,7 @@
     },
     "/api/v1/adif/enumerations": {
       "get": {
-        "description": "Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x).",
+        "description": "Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x), its\ncanonical route segment (`table`) and the file ADIF publishes it as.",
         "operationId": "enumerations_api_v1_adif_enumerations_get",
         "parameters": [
           {
@@ -786,7 +1091,7 @@
     },
     "/api/v1/adif/enumerations/{name}": {
       "get": {
-        "description": "One ADIF enumeration, every record, with the columns ADIF defines for it. `name` is ADIF's\nenumeration name (e.g. Propagation_Mode) or its table name; anything else is 404.",
+        "description": "One ADIF enumeration, with the columns ADIF defines for it. **The canonical route segment is\nthe table name**, ADIF's name in lower case (e.g. `secondary_administrative_subdivision`), which\nis also the suffix of the file ADIF publishes it as; ADIF's own spelling\n(`Secondary_Administrative_Subdivision`) is accepted too, in any case. Anything else is 404.\n\nPaged with `limit` / `offset`, searched with `q`, and **filtered exactly on any of its columns**\nby name, e.g. `?dxcc_entity_code=15&deleted=false`. A filter naming a column the enumeration\ndoes not have is refused (400) rather than ignored.",
         "operationId": "enumeration_api_v1_adif_enumerations__name__get",
         "parameters": [
           {
@@ -815,6 +1120,59 @@
               "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
               "title": "Adif Version"
             }
+          },
+          {
+            "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Rows to skip, for the page after `limit` rows.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip, for the page after `limit` rows.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Case-insensitive text search across the listed columns, applied before paging.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive text search across the listed columns, applied before paging.",
+              "title": "Q"
+            }
           }
         ],
         "responses": {
@@ -826,7 +1184,21 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "Link": {
+                "description": "Present while more rows remain: `<url>; rel=\"next\"`",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Total-Count": {
+                "description": "Rows matching the filters, across all pages",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -847,7 +1219,7 @@
     },
     "/api/v1/adif/fields": {
       "get": {
-        "description": "ADIF's fields: the vocabulary every IONIS-AI column is defined against.",
+        "description": "ADIF's fields (`fields.json`): the vocabulary every IONIS-AI column is defined against.",
         "operationId": "fields_api_v1_adif_fields_get",
         "parameters": [
           {
@@ -867,6 +1239,59 @@
               "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
               "title": "Adif Version"
             }
+          },
+          {
+            "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Rows to skip, for the page after `limit` rows.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip, for the page after `limit` rows.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Case-insensitive text search across the listed columns, applied before paging.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive text search across the listed columns, applied before paging.",
+              "title": "Q"
+            }
           }
         ],
         "responses": {
@@ -882,7 +1307,21 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "Link": {
+                "description": "Present while more rows remain: `<url>; rel=\"next\"`",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Total-Count": {
+                "description": "Rows matching the filters, across all pages",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -903,7 +1342,7 @@
     },
     "/api/v1/adif/modes": {
       "get": {
-        "description": "ADIF's Mode enumeration, each with its submodes (e.g. MFSK \u2192 FT4).",
+        "description": "ADIF's Mode enumeration, each with its submodes (e.g. MFSK \u2192 FT4). A search matches submodes\ntoo, so `q=ft4` finds MFSK. Curated view of `/adif/enumerations/mode`.",
         "operationId": "modes_api_v1_adif_modes_get",
         "parameters": [
           {
@@ -923,6 +1362,59 @@
               "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
               "title": "Adif Version"
             }
+          },
+          {
+            "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Rows to skip, for the page after `limit` rows.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip, for the page after `limit` rows.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Case-insensitive text search across the listed columns, applied before paging.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive text search across the listed columns, applied before paging.",
+              "title": "Q"
+            }
           }
         ],
         "responses": {
@@ -938,7 +1430,21 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "Link": {
+                "description": "Present while more rows remain: `<url>; rel=\"next\"`",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Total-Count": {
+                "description": "Rows matching the filters, across all pages",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "422": {
             "content": {
