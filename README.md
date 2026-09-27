@@ -158,6 +158,11 @@ make test       # front-end tests, then API tests against a fresh database conta
 make up         # run the stack from the local images
 ```
 
+The API tests also check **ADIF's own test QSOs** (6,191 for 3.1.6, 6,197 for 3.1.7) against each
+loaded version: they must raise nothing (`api/tests/test_adif_test_qsos.py`). The tests download
+ADIF's resource zip once, verify it against the pinned SHA-256 in `db/load/adif_upstream_sha256.json`
+and cache it (`ATLAS_ADIF_CACHE`, default `~/.cache/ionis-ai-atlas/adif`).
+
 The API tests need `api/requirements.txt` and `api/requirements-test.txt` installed
 (`python3.12 -m pip install -r api/requirements.txt -r api/requirements-test.txt`).
 `api/tests/test_compose.py` guards `compose.yaml`: the healthchecks live there, not only in the images,
