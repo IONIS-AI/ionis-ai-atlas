@@ -1,7 +1,7 @@
 # IONIS-AI Atlas
 
 [![Image scan](https://github.com/IONIS-AI/ionis-ai-atlas/actions/workflows/scan.yml/badge.svg)](https://github.com/IONIS-AI/ionis-ai-atlas/actions/workflows/scan.yml)
-[![Docker Hub](https://img.shields.io/docker/v/ki7mt/ionis-ai-atlas?sort=semver&label=Docker%20Hub)](https://hub.docker.com/r/ki7mt/ionis-ai-atlas)
+[![Docker Hub](https://img.shields.io/github/v/tag/IONIS-AI/ionis-ai-atlas?sort=semver&label=Docker%20Hub)](https://hub.docker.com/r/ki7mt/ionis-ai-atlas)
 [![ADIF](https://img.shields.io/badge/ADIF-3.1.7-blue)](https://adif.org/)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue)](LICENSE)
 
