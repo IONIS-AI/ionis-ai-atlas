@@ -46,6 +46,15 @@ case "$CHANNEL" in
         # matched nothing on the M3 -- the one machine designated to publish releases.
         VERSION="$(git tag --points-at HEAD | sed -n 's/^v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p' | head -1)"
         [ -n "$VERSION" ] || die "CHANNEL=prod publishes a release: tag this commit vX.Y.Z first"
+        # The tag must be the PUBLISHED one. Checking only the local tag lets a local-only or
+        # locally-moved tag satisfy the guard, and the images then carry an
+        # org.opencontainers.image.revision that the released tag does not point at -- provenance
+        # nobody else can resolve. That happened on 0.1.0; this is the check that stops it.
+        remote_commit="$(git ls-remote origin "refs/tags/v$VERSION^{}" | cut -f1)"
+        [ -n "$remote_commit" ] \
+          || die "v$VERSION is not on origin: push the release tag before publishing"
+        [ "$remote_commit" = "$(git rev-parse HEAD)" ] \
+          || die "origin's v$VERSION points at $(echo "$remote_commit" | cut -c1-12), not HEAD ($(git rev-parse --short=12 HEAD)); push the tag you intend to release"
         ref_for() { case "$1" in app) echo "ionis-ai-atlas $VERSION" ;; db) echo "ionis-ai-atlas-db $VERSION" ;; esac; } ;;
   *)    die "CHANNEL must be dev or prod, not $CHANNEL" ;;
 esac
