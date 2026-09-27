@@ -22,6 +22,49 @@ Images on docker.io, all under `ki7mt`, public, tagged by release version: `ki7m
 Development builds go to one private repository, `ki7mt/ionis-ai-atlas-dev`, with the image kind in
 the tag (`app-<sha>`, `db-<sha>`).
 
+## Serve it over HTTPS (a server, VM or another machine)
+
+Atlas answers plain HTTP on `127.0.0.1:8080` only, so by default only the machine running it can
+reach it. To open it to other machines, keep it that way and put an HTTPS reverse proxy in front,
+with a certificate for the name you will use: one from your own CA, Let's Encrypt, or any other.
+Don't publish port 8080 on other addresses. That would serve it without encryption, and Atlas would
+refuse the requests anyway (below).
+
+Atlas accepts only requests addressed to `localhost` or `127.0.0.1`. This protects against DNS
+rebinding, where a hostile web page points a name it controls at your machine. So the proxy has to:
+
+- accept only the names you serve Atlas under, and refuse the rest;
+- forward to `http://127.0.0.1:8080` with the `Host` header set to `localhost`.
+
+With nginx:
+
+```nginx
+server {                                   # any other name: refused
+    listen 443 ssl default_server;
+    ssl_certificate     /etc/nginx/tls/atlas.crt;
+    ssl_certificate_key /etc/nginx/tls/atlas.key;
+    return 421;
+}
+server {
+    listen 443 ssl;
+    server_name atlas.example.org 192.0.2.10;   # your name(s) and, optionally, the IP
+    ssl_certificate     /etc/nginx/tls/atlas.crt;
+    ssl_certificate_key /etc/nginx/tls/atlas.key;
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host localhost;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+```
+
+To reach Atlas by IP address, the certificate must list that IP as well as the name. On RHEL, Rocky or
+other SELinux systems, let the proxy connect to Atlas: `setsebool -P httpd_can_network_relay on`.
+
+Tested with the published release on a Rocky Linux 9 VM (SELinux enforcing): nginx with a
+certificate from a private CA, reached from other machines by DNS name and by IP. Certificates
+verified, and requests under any other name were refused.
+
 ## What is in it today
 
 **ADIF Reference**: ADIF's bands, modes and submodes, DXCC entities, contest IDs and fields, for
