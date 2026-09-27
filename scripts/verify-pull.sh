@@ -9,16 +9,15 @@
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 SHA="${1:?usage: $0 <sha>   (the tag make publish printed)}"
-SUFFIX=-dev
 . scripts/registry-lib.sh
 
-APP="docker.io/$NAMESPACE/ionis-ai-atlas$SUFFIX:$SHA"
-DB="docker.io/$NAMESPACE/ionis-ai-atlas-db$SUFFIX:$SHA"
+APP="docker.io/$NAMESPACE/ionis-ai-atlas-dev:app-$SHA"   # dev: one private repository, kind in the tag
+DB="docker.io/$NAMESPACE/ionis-ai-atlas-dev:db-$SHA"
 URL=http://127.0.0.1:8080
 PROJECT=atlas-verify
 if [ "$ENGINE" = podman ]; then COMPOSE=(podman compose); else COMPOSE=(docker compose); fi
 COMPOSE+=(-p "$PROJECT" -f compose.yaml); [ -n "${COMPOSE_EXTRA:-}" ] && COMPOSE+=(-f "$COMPOSE_EXTRA")
-export ATLAS_REGISTRY="docker.io/$NAMESPACE" ATLAS_APP="ionis-ai-atlas$SUFFIX" ATLAS_DB="ionis-ai-atlas-db$SUFFIX" ATLAS_TAG="$SHA"
+export ATLAS_APP_IMAGE="$APP" ATLAS_DB_IMAGE="$DB"
 
 curl -s -o /dev/null "$URL" && { echo "verify-pull: something is already on $URL; stop it first (make dev-down)" >&2; exit 1; }
 
