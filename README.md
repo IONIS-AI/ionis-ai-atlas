@@ -1,6 +1,9 @@
 # IONIS-AI Atlas
 
 [![Image scan](https://github.com/IONIS-AI/ionis-ai-atlas/actions/workflows/scan.yml/badge.svg)](https://github.com/IONIS-AI/ionis-ai-atlas/actions/workflows/scan.yml)
+[![Docker Hub](https://img.shields.io/docker/v/ki7mt/ionis-ai-atlas?sort=semver&label=Docker%20Hub)](https://hub.docker.com/r/ki7mt/ionis-ai-atlas)
+[![ADIF](https://img.shields.io/badge/ADIF-3.1.7-blue)](https://adif.org/)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue)](LICENSE)
 
 Explore the IONIS-AI propagation collection. React front end, FastAPI API, PostgreSQL with pgvector,
 shipped as Docker images on docker.io and run with `docker compose up`.
@@ -146,7 +149,7 @@ make up         # run the stack from the local images
 
 The API tests need `api/requirements.txt` and `api/requirements-test.txt` installed
 (`python3.12 -m pip install -r api/requirements.txt -r api/requirements-test.txt`).
-`tests/test_compose.py` guards `compose.yaml`: the healthchecks live there, not only in the images,
+`api/tests/test_compose.py` guards `compose.yaml`: the healthchecks live there, not only in the images,
 because podman ignores `HEALTHCHECK` in the OCI-format images the publish step produces.
 
 ### Vulnerability scanning
