@@ -1,7 +1,9 @@
 <!--
-Copied from the project's internal build specification so that it is readable by anyone using
-these images. Infrastructure identifiers -- machine names, secret locations and the lab's own PKI
-plumbing -- were replaced with the capability they stand for; nothing else was changed.
+This is the authoritative build specification for IONIS-AI Atlas (Judge, 2026-09-27: the spec
+moved here from fleet-ops packaging/fleet-llm-bench/projects/atlas-web/SPEC.md). It began as a copy
+of that internal document, with infrastructure identifiers -- machine names, secret locations and
+the lab's own PKI plumbing -- replaced by the capability they stand for, so that anyone using these
+images can read it. Changes are made here, by PR.
 -->
 
 # IONIS-AI Propagation Atlas (Web) — build specification
@@ -72,7 +74,7 @@ database as published and never writes to it.
 
 | schema | holds |
 |---|---|
-| `adif` | ADIF's data types, fields and 25 enumerations, versioned by `adif_version`; `adif.current` names the version in use |
+| `adif` | ADIF's data types, fields and 25 enumerations, versioned by `adif_version`; `adif.current` names the version in use. Growing to the rest of ADIF's published resource zip (files, entity geography, test QSOs) per `IONIS-DATA-SPEC.md`. **ADIF is the base every other schema builds on** |
 | `ionis` | IONIS-AI dimensions (DXpeditions, contests, grid centroids, the lab band code), with foreign keys into `adif` |
 | `collection` | the published signatures, partitioned by band, plus `collection.manifest`: one row per dataset |
 
@@ -265,29 +267,43 @@ Disk is stated in the release notes and is set by what the collection publishes.
 Before the views: this is one persistent frame, not a set of separate pages.
 
 ```
-+--------------------------------------------------------+
-|  IONIS-AI Atlas    [ Solar | Contests | DXpeditions | ... ]|  <- primary nav
-+--------------+-----------------------------------------+
-| Band      v  |                                          |
-| Date      v  |                                          |
-| Grid      v  |          content region                  |
-| Source    v  |                                          |
-|              |                                          |
-| [Apply]      |                                          |
-+--------------+-----------------------------------------+
-   ^ contextual sidebar - changes with the section above
++-------------------------------------------------------------------+
+| [IONIS-AI Atlas] <- Home   [ ADIF | Solar | Contests | ... ]  API  |  <- sections
++----------------+--------------------------------------------------+
+| «              |  Secondary_Administrative_Subdivision            |
+| Data types     |  enumerations_secondary_administrative_...json   |
+| Fields         |  [ search....... ] [ entity v ] [ deleted v ]    |  <- filters for THIS view
+| Enumerations   |  +--------------------------------------------+  |
+|  Ant Path      |  | table                                      |  |
+|  ARRL Section  |  |                                            |  |
+|  Band          |  +--------------------------------------------+  |
+|  ...           |  1-100 of 1,965   < 1 2 3 ... 20 >   [100 v]    |  <- pagination
++----------------+--------------------------------------------------+
+  ^ navigation: what to look at, named as the spec names it; collapsible
 ```
 
 **Primary navigation across the top** switches *section*. Sections are subjects a visitor
-arrives with — Solar, Contests, DXpeditions, Paths — not chart types. Someone comes here because
-they care about DXpeditions, not because they want a scatter plot.
+arrives with — ADIF, Solar, Contests, DXpeditions, Paths — not chart types. Someone comes here
+because they care about DXpeditions, not because they want a scatter plot. **ADIF is the first
+section and the base everything else is built on**; IONIS-AI's own data arrives as further
+sections, so this strip grows over time. **The brand, "IONIS-AI Atlas", is the link to Home**
+(`/`), which is R1.
 
-**The contextual sidebar on the left** holds the controls for the active section and only those.
-Band, date, grid, source — whatever narrows *this* subject. The rail changes when the section
-changes; a control that does not apply is absent rather than disabled.
+**The sidebar on the left is navigation, and only navigation:** the list of things this section
+contains, in the order and under the names its specification uses (R16), so a reader with the spec
+open can find the same thing here. It is **collapsible** (« / ») to give the content region the full
+width, remembers that choice per browser, and **starts collapsed at phone width**.
 
-**The content region in the middle** renders the active view. The frame around it does not
-re-render when the content does.
+**The content region** renders the active view, **with that view's own filters, search and
+pagination above and below it** (R15). What can be filtered depends on what is shown: bands by
+frequency, subdivisions by entity, fields by data type. The frame around it does not re-render
+when the content does.
+
+*Changed 2026-09-27 (Judge; ionis-ai-atlas#35–#38):* this section previously put the controls in
+the sidebar ("the contextual sidebar on the left holds the controls for the active section"). With
+one sidebar serving both navigation and filtering, a filter could not be specific to the table it
+filters, and the sidebar and the table competed for the same space. Navigation moved left; filters
+moved to the view they filter.
 
 The requirements below are capabilities, and they live *inside* sections rather than being
 destinations of their own. A path map (R2) is how the Paths section draws its results; source
@@ -312,7 +328,11 @@ host a genuinely foreign application, never for your own views.
 
 **R1 — Dashboard.** A landing view that makes the scale and shape of the collection immediately
 legible: what is present, how much, covering what period and which bands. This is the first
-thing a visitor sees; it should make them want to explore.
+thing a visitor sees; it should make them want to explore. It is **Home** (`/`, reached from the
+brand in the top strip), and it also says **what Atlas is**, **which release is running**
+(`/api/v1/version`: release and revision, or `dev`), which ADIF versions are loaded and which is
+current, and where a developer goes next (`/api/docs`, the OpenAPI description, and how to verify
+the signed images).
 
 **R2 — Path map.** Open paths for a chosen band, hour and month, drawn as great-circle arcs on a
 world map, encoded by signal strength. Interactive: hover for detail, zoom, select.
@@ -401,6 +421,76 @@ schemas may not be written from. Personal data **shall never** leave the machine
 the schema visible, run as `atlas_ro` with a statement timeout and a row limit. The console is the
 difference between claiming the data is explorable and it being explorable, and the honest answer
 to a view the spec did not anticipate.
+
+**R15 — Lists are paged and filtered on the server.** No view renders a whole table, and no list
+endpoint makes a client download one.
+
+- **Every list endpoint** accepts `limit` and a position, and returns the page with `total` (rows
+  matching the filters), `limit` and the position of the next page. Reference data (ADIF, the
+  `ionis` dimensions: thousands of rows) uses `offset`. Collection data (millions to billions)
+  uses a **keyset cursor** on the primary key, because `OFFSET` scans every skipped row. `limit`
+  defaults to 100 and is capped at 1,000.
+- **Filtering and search run in the API**, before the page is cut (`q` for text search, plus
+  per-view filters as query parameters). A filter applied in the browser sees only the current
+  page, so it silently misses matches: the moment pagination exists, client-side filtering is
+  wrong.
+- **The contract stays additive** (see *The API contract*): endpoints published before R15 keep
+  returning every row when called without `limit`, so no existing consumer breaks. The UI always
+  requests pages, and endpoints added from now on page by default.
+- The UI shows `1–100 of 1,965`, page controls and a page-size choice, and carries page, size and
+  filters in the URL (R11).
+
+*Why:* measured on 0.1.3, the Primary Administrative Subdivision view rendered all 1,965 rows as one
+page about 91,000 px tall. That's small next to what's coming: the test QSOs are 6,197 rows per ADIF
+version, and the collection is billions.
+
+**R16 — Names come from the specification.** Each thing Atlas shows has **one name**, taken from
+the specification that defines it, and that name is visible at every layer, so someone reading the
+spec can find it in the UI and the API without a mapping table:
+
+| ADIF (spec and file) | Table | API route | UI route | UI label |
+|---|---|---|---|---|
+| `Secondary_Administrative_Subdivision` · `enumerations_secondary_administrative_subdivision.json` | `adif.secondary_administrative_subdivision` | `/api/v1/adif/enumerations/secondary_administrative_subdivision` | `/adif/enumerations/secondary_administrative_subdivision` | Secondary Administrative Subdivision |
+| `DXCC_Entity_Code` · `enumerations_dxcc_entity_code.json` | `adif.dxcc_entity_code` | `/api/v1/adif/enumerations/dxcc_entity_code` | `/adif/enumerations/dxcc_entity_code` | DXCC Entity Code |
+| Fields · `fields.json` | `adif.field` | `/api/v1/adif/fields` | `/adif/fields` | Fields |
+| Data Types · `datatypes.json` | `adif.datatype` | `/api/v1/adif/datatypes` | `/adif/datatypes` | Data Types |
+
+- **The route segment is ADIF's name in lower case**, which is also the JSON file's suffix and the
+  table name. The API also accepts ADIF's own spelling (`DXCC_Entity_Code`), as it does today.
+- **The label is ADIF's name with spaces for underscores.** Each view's heading shows ADIF's exact
+  name, the source file and the API route, so the three can be cross-checked from the page.
+- The friendly routes published before R16 (`/adif/bands`, `/modes`, `/dxcc`, `/contests`) stay
+  (additive contract). OpenAPI marks each as an alias of its canonical route, and the UI uses the
+  canonical ones.
+- **The same rule holds for everything added later.** The `adif` and `ionis` objects defined in
+  `ionis-core/docs/IONIS-DATA-SPEC.md` (release files, entity geography, test QSOs, derived views),
+  and IONIS-AI's own data as it arrives, take their names from that document. The surface will grow
+  large, and one name per thing is what keeps it navigable.
+
+**R17 — A new ADIF version is data, not code.** Judge, 2026-09-27: *"ADIF releases, we push the new
+version, and the UI/API continues on as before."*
+
+- **Adding a version touches only:** its SHA-256 pin (`adif_upstream_sha256.json`), the engine
+  image's version list and current pointer (`ADIF_VERSIONS`, `ADIF_CURRENT` in
+  `db/load/atlas-db-lib.sh`), and, **only if ADIF changed structure** (a new enumeration, field or
+  column), the DDL regenerated by `adif_tier.py ddl`. **Nothing in `api/` or `web/`.**
+- **The API and UI derive everything ADIF-specific from the database:** which versions exist, which
+  is current, the list of enumerations, their columns and counts. No ADIF version number,
+  enumeration name, column list or count appears as a literal in `api/` or `web/`, except the
+  curated views (bands, modes, DXCC, contests). Those **degrade rather than break**: a column ADIF
+  adds shows in the generic enumeration view and in `record`, and one ADIF removes renders empty
+  instead of failing the query.
+- **A structural change upgrades an existing database volume**, additively (new tables, new
+  columns). It isn't limited to a fresh install: the engine reconciles its volume with the image on
+  every start, and that has to include schema, not only rows.
+- **Proven by a rehearsal, not asserted:** build an engine carrying **3.1.6 only** and run the API
+  and UI test suites; then add **3.1.7** as if it were a new release (it added `OFDM` and four
+  submodes) and rerun **the same tests, unchanged**, on a fresh volume **and** on the upgraded 3.1.6
+  volume. Both must pass, and the new values must appear without a code change.
+
+*Known gaps at 0.1.3, to close under R17:* the OpenAPI description names "ADIF 3.1.7" literally
+(`api/atlas_api/main.py`); the curated views' degrade-not-break behaviour is untested; the volume
+upgrade on a structural change is unverified.
 
 ## Deliverables
 
