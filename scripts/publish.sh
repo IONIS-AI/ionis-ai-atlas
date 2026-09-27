@@ -41,6 +41,12 @@ KINDS=(app db)                            # app = the React + FastAPI image, db 
 PLATFORMS=linux/amd64,linux/arm64
 BUILDER=atlas-publish                     # a docker-container buildx builder: multi-platform output
 
+# The release identity goes into the image (ionis-ai-atlas#30) and must be IDENTICAL on the builds
+# that are scanned and the build that is pushed. The ARG changes an ENV and a RUN layer, so passing
+# it to only one of them makes the pushed image a different image from the one that passed the
+# scan -- the gate would then be attesting to something nobody ships.
+VERSION_ARGS=()
+
 die() { echo "publish: $*" >&2; exit 1; }
 [ -z "$(git status --porcelain)" ] || die "working tree is not clean; commit or stash first"
 SHA="$(git rev-parse --short=12 HEAD)"
@@ -69,6 +75,7 @@ case "$CHANNEL" in
         ref_for() { case "$1" in app) echo "ionis-ai-atlas $VERSION" ;; db) echo "ionis-ai-atlas-db $VERSION" ;; esac; } ;;
   *)    die "CHANNEL must be dev or prod, not $CHANNEL" ;;
 esac
+VERSION_ARGS=(--build-arg "ATLAS_VERSION=${VERSION:-$SHA}" --build-arg "ATLAS_REVISION=$(git rev-parse HEAD)")
 command -v docker >/dev/null && docker buildx version >/dev/null 2>&1 \
   || die "needs Docker with buildx: run this on the M3 (Docker Desktop)"
 # The capability that matters is emulation of the other architecture, which Docker Desktop has built
@@ -132,6 +139,7 @@ scan_local() {                     # $1 = kind, $2 = context dir
     scan_tag="localhost/atlas-scan-$kind:$arch"
     echo "publish: building $kind for $plat to scan it"
     docker buildx build --builder "$BUILDER" --platform "$plat" --pull --load \
+      "${VERSION_ARGS[@]}" \
       -t "$scan_tag" -f "$ctx/Containerfile" "$ctx" >/dev/null
     rc=0; ENGINE=docker scripts/scan.sh "$scan_tag" || rc=$?
     docker image rm -f "$scan_tag" >/dev/null 2>&1 || true
@@ -170,6 +178,7 @@ for kind in "${KINDS[@]}"; do
 
   docker buildx build --builder "$BUILDER" --platform "$PLATFORMS" --pull --push \
     --sbom=true --provenance=mode=max \
+    "${VERSION_ARGS[@]}" \
     --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
     --label "org.opencontainers.image.version=${VERSION:-$SHA}" \
     -t "$stage_ref" -f "$ctx/Containerfile" "$ctx"

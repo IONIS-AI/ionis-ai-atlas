@@ -68,6 +68,9 @@ if ! out="$("${COMPOSE[@]}" up -d 2>&1)"; then   # say why, rather than exiting 
 fi
 
 check "stack comes up healthy"               'wait_up'
+# The deployment says which image it is. Until #30 there was no way to ask a running Atlas, so a
+# signature could prove an image authentic while nothing proved the deployment ran that image.
+check "reports the release it was built from" '[ "$(curl -s $URL/api/v1/version | jq -r .version)" = "$SHA" ]'
 check "ADIF current is 3.1.7"                '[ "$(curl -s $URL/api/v1/adif/current | jq -r .adif_version)" = 3.1.7 ]'
 check "25 ADIF enumerations"                 '[ "$(curl -s $URL/api/v1/adif/enumerations | jq length)" = 25 ]'
 check "front end served"                     '[ "$(curl -s -o /dev/null -w %{http_code} $URL/)" = 200 ]'
