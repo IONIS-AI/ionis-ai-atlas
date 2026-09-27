@@ -64,6 +64,11 @@ make test       # front-end tests, then API tests against a fresh database conta
 make up         # run the stack from the local images
 ```
 
+The API tests need `api/requirements.txt` and `api/requirements-test.txt` installed
+(`python3.12 -m pip install -r api/requirements.txt -r api/requirements-test.txt`).
+`tests/test_compose.py` guards `compose.yaml`: the healthchecks live there, not only in the images,
+because podman ignores `HEALTHCHECK` in the OCI-format images the publish step produces.
+
 `db/load/` is vendored from an ionis-core release tag, which is the source of truth for the loader,
 the schema and the adif.org checksums: `scripts/sync-from-ionis-core.sh <tag>` updates it, and
 `make images` refuses to build if the copy has drifted from what `db/load/SOURCE` records.
