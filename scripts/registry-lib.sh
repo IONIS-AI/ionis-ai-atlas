@@ -16,6 +16,12 @@ if [ "$ENGINE" = podman ]; then
   printf '%s' "$_token" | podman login --authfile "$REGISTRY_AUTH_FILE" -u "$ACCOUNT" --password-stdin docker.io >/dev/null
 else
   export DOCKER_CONFIG="$REG_TMP"
+  # Docker looks for CLI plugins in $DOCKER_CONFIG/cli-plugins, and Docker Desktop installs buildx
+  # only under the user's own config directory (no system-wide plugin dir on macOS). Repointing
+  # DOCKER_CONFIG at a temporary directory therefore un-installs `docker buildx` for this process,
+  # and the manifest step fails with "unknown shorthand flag: 't' in -t" -- docker parsing
+  # `buildx imagetools create -t ...` as top-level arguments. Link the real plugins back in.
+  if [ -d "$HOME/.docker/cli-plugins" ]; then ln -s "$HOME/.docker/cli-plugins" "$REG_TMP/cli-plugins"; fi
   printf '%s' "$_token" | docker login -u "$ACCOUNT" --password-stdin >/dev/null 2>&1
 fi
 HUB_JWT="$(printf '{"username":"%s","password":"%s"}' "$ACCOUNT" "$_token" \

@@ -43,7 +43,11 @@ check "foreign Host refused (DNS rebinding)" '[ "$(curl -s -o /dev/null -w %{htt
 check "Content-Security-Policy present"      'curl -s -D - -o /dev/null $URL/ | grep -qi "^content-security-policy: default-src .self."'
 check "database on a named volume"           '"${COMPOSE[@]}" ps -q db | xargs $ENGINE inspect --format "{{range .Mounts}}{{.Type}}{{end}}" | grep -q volume'
 "${COMPOSE[@]}" restart db >/dev/null 2>&1
-check "restart reconciles the volume"        '"${COMPOSE[@]}" logs db 2>&1 | grep -q "ADIF 3.1.7 present" && wait_up'
+# grep -q exits at the first match, so `compose logs | grep -q` leaves the writer with a closed
+# pipe: it exits 255 and pipefail fails the whole pipeline even though the match was found. How
+# often depends on how much the writer had left to flush, which is why it looked intermittent.
+# Process substitution keeps the writer out of the pipeline, so only grep's status counts.
+check "restart reconciles the volume"        'grep -q "ADIF 3.1.7 present" < <("${COMPOSE[@]}" logs db 2>&1) && wait_up'
 
 echo "verify-pull: $([ $fails = 0 ] && echo PASS || echo "FAIL ($fails)")"
 [ $fails = 0 ]
