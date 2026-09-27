@@ -117,7 +117,9 @@ export function AdifView({ view, version }: { view: string; version: string }) {
   };
   const go = (p: number) => {
     update({ page: p <= 1 ? null : String(p) });
+    // The content region scrolls on a desktop; on a phone the document does (#42). Reset both.
     document.querySelector(".content")?.scrollTo(0, 0);
+    window.scrollTo(0, 0);
   };
 
   useEffect(() => setDraft(q), [q]);
