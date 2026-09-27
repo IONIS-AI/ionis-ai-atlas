@@ -13,6 +13,11 @@ SPEC="$LOAD/spec"                        # ADIF's all.json per version, verified
 PINS="$LOAD/adif_upstream_sha256.json"
 ADIF_VERSIONS=(3.1.6 3.1.7)              # every ADIF version this engine image carries
 ADIF_CURRENT=3.1.7                       # the version the image points the database at
+# The lines above are the release. ATLAS_ADIF_VERSIONS / ATLAS_ADIF_CURRENT (build arguments, kept in
+# the image's environment so every start agrees with the build) override them for the R17
+# rehearsal: an engine carrying 3.1.6 alone, upgraded in place to one carrying 3.1.7 (#41).
+if [ -n "${ATLAS_ADIF_VERSIONS:-}" ]; then read -ra ADIF_VERSIONS <<< "$ATLAS_ADIF_VERSIONS"; fi
+ADIF_CURRENT="${ATLAS_ADIF_CURRENT:-$ADIF_CURRENT}"
 
 psql() { PGOPTIONS='-c client_min_messages=warning' "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -q "$@"; }
 tier() { python3 "$LOAD/adif_tier.py" "$1" --spec-dir "$SPEC" --pins "$PINS" "${@:2}"; }

@@ -13,6 +13,8 @@
 #                    first execution.
 #   make scan        scan the local images for vulnerabilities; fails on any fixable HIGH or CRITICAL
 #                    (scripts/scan.sh holds the threshold; the nightly workflow scans the release)
+#   make rehearse-adif  prove a new ADIF version drops in with no code change: 3.1.6-only engine,
+#                    upgraded in place to the release, same tests (SPEC R17)
 #   make check-ui    drive the ADIF section in headless Chromium: paging, search, names (R15, R16)
 #   make check-browser  render both pages in headless Chromium and fail on anything the CSP blocks
 #                    (needs the stack up: `make dev` or `make up` first)
@@ -21,7 +23,7 @@ TAG    ?= dev
 LOCAL  := ATLAS_APP_IMAGE=localhost/ionis-ai-atlas:$(TAG) ATLAS_DB_IMAGE=localhost/ionis-ai-atlas-db:$(TAG)
 PY     ?= python3.12
 
-.PHONY: images openapi check-vendor test up down dev dev-down publish verify-pull check-browser check-ui release-dryrun scan
+.PHONY: images openapi check-vendor test up down dev dev-down publish verify-pull check-browser check-ui rehearse-adif release-dryrun scan
 
 check-vendor:
 	scripts/sync-from-ionis-core.sh --check
@@ -77,6 +79,9 @@ check-browser:
 	else \
 	  $(PY) scripts/check-browser.py $(BASE); \
 	fi
+
+rehearse-adif:
+	ENGINE=$(ENGINE) PY=$(PY) scripts/rehearse-adif-version.sh
 
 check-ui:
 	@if command -v uv >/dev/null; then \

@@ -15,7 +15,13 @@ ENV PGDATA=/var/lib/pgsql/17/data \
 
 COPY --chown=postgres:postgres load/ /opt/atlas-load/
 USER postgres
-RUN bash /opt/atlas-load/build-db.sh
+# Which ADIF versions this engine carries; empty means the release (db/load/atlas-db-lib.sh). Set
+# only for the R17 rehearsal. The RUN names both ARGs because podman reuses a cached `ENV X=$ARG`
+# layer when an ARG changes but keys a RUN on the ARGs it uses (measured, #30).
+ARG ATLAS_ADIF_VERSIONS=""
+ARG ATLAS_ADIF_CURRENT=""
+RUN ATLAS_ADIF_VERSIONS="$ATLAS_ADIF_VERSIONS" ATLAS_ADIF_CURRENT="$ATLAS_ADIF_CURRENT" bash /opt/atlas-load/build-db.sh
+ENV ATLAS_ADIF_VERSIONS=$ATLAS_ADIF_VERSIONS ATLAS_ADIF_CURRENT=$ATLAS_ADIF_CURRENT
 
 EXPOSE 5432
 STOPSIGNAL SIGINT

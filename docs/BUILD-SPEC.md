@@ -491,9 +491,15 @@ version, and the UI/API continues on as before."*
   submodes) and rerun **the same tests, unchanged**, on a fresh volume **and** on the upgraded 3.1.6
   volume. Both must pass, and the new values must appear without a code change.
 
-*Known gaps at 0.1.3, to close under R17:* the OpenAPI description names "ADIF 3.1.7" literally
-(`api/atlas_api/main.py`); the curated views' degrade-not-break behaviour is untested; the volume
-upgrade on a structural change is unverified.
+**Proven by `make rehearse-adif`** (docker or podman): an engine carrying 3.1.6 alone passes the API
+and UI suites; the release engine on that same volume passes the same suites unchanged and serves
+`OFDM`; a fresh release engine passes them too. The tests take every ADIF count from ADIF's own
+`all.json` for the version under test, and `check-ui` takes its totals from the API, so neither names
+a version. A structural change (new column, a code no longer unique, a column widened to text) is
+proven separately in ionis-core (`make test-adif-upgrade`, IONIS-AI/ionis-core#42), since 3.1.6 ->
+3.1.7 changed rows only. *The three gaps listed at 0.1.3 are closed* (#41): the OpenAPI description
+no longer names a version, the curated views degrade (tested by hiding columns), and an existing
+volume takes a structural change.
 
 ## Deliverables
 
