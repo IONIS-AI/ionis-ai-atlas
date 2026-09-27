@@ -8,12 +8,14 @@
 #                    (one private repository; kind = app | db)
 #   make publish-manifest   join amd64 + arm64 into ki7mt/ionis-ai-atlas-dev:<kind>-<sha>, once both are pushed
 #   make verify-pull TAG=<sha>   pull from docker.io and prove the published compose file runs
+#   make check-browser  render both pages in headless Chromium and fail on anything the CSP blocks
+#                    (needs the stack up: `make dev` or `make up` first)
 ENGINE ?= podman
 TAG    ?= dev
 LOCAL  := ATLAS_APP_IMAGE=localhost/ionis-ai-atlas:$(TAG) ATLAS_DB_IMAGE=localhost/ionis-ai-atlas-db:$(TAG)
 PY     ?= python3.12
 
-.PHONY: images openapi check-vendor test up down dev dev-down publish publish-manifest verify-pull
+.PHONY: images openapi check-vendor test up down dev dev-down publish publish-manifest verify-pull check-browser
 
 check-vendor:
 	scripts/sync-from-ionis-core.sh --check
@@ -55,3 +57,14 @@ publish-manifest:
 
 verify-pull:
 	scripts/verify-pull.sh $(TAG)
+
+# The CSP is enforced by the browser, so nothing server-side can prove the pages still work under
+# it. BASE overrides the URL; the stack must already be running.
+BASE ?= http://localhost:8080
+
+check-browser:
+	@if command -v uv >/dev/null; then \
+	  uv run --with playwright python scripts/check-browser.py $(BASE); \
+	else \
+	  $(PY) scripts/check-browser.py $(BASE); \
+	fi
