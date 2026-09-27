@@ -26,6 +26,14 @@ SIGN_KEY_DEV=ki7mt-images-dev
 # sink token minted before a policy was attached fails forever and reads as a missing grant rather
 # than a stale token. That cost us hours on the Docker Hub secret; this function exists so the
 # publish path cannot repeat it.
+# vault_addr — the Vault address from the host AppRole. SIGNING ONLY: verification needs no Vault,
+# so nothing on the verify path may call this (see cosign() below).
+vault_addr() {
+  local approle="${VAULT_APPROLE_FILE:-$HOME/.config/secrets/vault-approle.json}"
+  [ -r "$approle" ] || { echo "sign: no AppRole at $approle" >&2; return 1; }
+  python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['vault_addr'].rstrip('/'))" "$approle"
+}
+
 vault_token_fresh() {
   local approle="${VAULT_APPROLE_FILE:-$HOME/.config/secrets/vault-approle.json}"
   [ -r "$approle" ] || { echo "sign: no AppRole at $approle" >&2; return 1; }
@@ -34,7 +42,7 @@ vault_token_fresh() {
   # extension"). curl accepts it, and it is what vault-secret already uses, so this keeps one
   # TLS behaviour across the lab's tooling instead of two.
   local addr body
-  addr="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['vault_addr'].rstrip('/'))" "$approle")"
+  addr="$(vault_addr)" || return 1
   body="$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({'role_id':d['role_id'],'secret_id':d['secret_id']}))" "$approle")"
   # -d @- reads the body from STDIN. Passing it as -d "$body" put the AppRole secret_id on curl's
   # argv, where any local process could read it with ps for the life of the request.
@@ -52,16 +60,42 @@ vault_token_fresh() {
 # VAULT_TOKEN is deliberately optional. Signing needs Vault; VERIFICATION DOES NOT -- it needs only
 # the public key and the registry. Referencing it unguarded made `set -u` abort verify-pull with an
 # unbound variable before any check could report, which reads as a crash rather than a verdict.
-# VAULT_ADDR comes from the AppRole file so there is one source of truth for it.
+#
+# For the same reason the Vault environment is added ONLY when a token is present, i.e. only when
+# signing. Reading the AppRole unconditionally meant a machine that has no AppRole -- which is every
+# machine a user verifies a release on, and the whole point of publishing the public key -- aborted
+# here before cosign ran. Verification must need nothing but the key and the registry.
+#
+# The array is expanded with the ${a[@]+"${a[@]}"} form: under `set -u` bash 4.3 and earlier treat
+# an empty array as unbound, and verify-pull is run on machines we do not choose (macOS ships 3.2).
 cosign() {
-  local addr
-  addr="$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('${VAULT_APPROLE_FILE:-$HOME/.config/secrets/vault-approle.json}')))['vault_addr'])")"
+  local vault=()
+  if [ -n "${VAULT_TOKEN:-}" ]; then
+    local addr; addr="$(vault_addr)" || return 1
+    # -e VAULT_TOKEN with no value: docker copies it from the environment, keeping it off argv.
+    vault=(-e VAULT_ADDR="$addr" -e VAULT_TOKEN)
+  fi
   docker run --rm \
-    -e VAULT_ADDR="$addr" -e VAULT_TOKEN \
+    ${vault[@]+"${vault[@]}"} \
     -e SSL_CERT_FILE=/ca/root.crt -v "$CA_CERT:/ca/root.crt:ro" \
     -e DOCKER_CONFIG=/dc -v "$DOCKER_CONFIG:/dc:ro" \
     ${SIGN_EXTRA_MOUNT:+-v "$SIGN_EXTRA_MOUNT"} \
     "$COSIGN_IMAGE" "$@"
+}
+
+# vault_token_revoke <token> — hand the token back the moment signing is done.
+#
+# `unset VAULT_TOKEN` only drops our copy: the token stays valid in Vault for the rest of its TTL,
+# so a token captured from the process environment outlives the run that made it. revoke-self ends
+# it immediately. The token goes in a curl config on STDIN, not in -H on argv, for the same reason
+# the AppRole login uses -d @-. Best effort: a release is not failed by a revoke that did not land,
+# but it is reported, because a token we believe is dead and is not is worth knowing about.
+vault_token_revoke() {
+  local token="$1" addr
+  addr="$(vault_addr)" || return 0
+  printf 'header = "X-Vault-Token: %s"\n' "$token" \
+    | curl -fsS -K - --cacert "$CA_CERT" -X POST "$addr/v1/auth/token/revoke-self" >/dev/null \
+    || echo "sign: warning: could not revoke the signing token (it expires on its own TTL)" >&2
 }
 
 # sign_digest <channel> <image@digest> — sign one digest with the channel's key.
@@ -74,6 +108,8 @@ sign_digest() {
   local rc=0
   cosign sign --key "hashivault://$key" --tlog-upload="$tlog" -y \
     -a "publisher=ki7mt" -a "channel=$channel" "$ref" || rc=$?
+  # Revoked whether signing worked or not: a failed sign leaves a live token just the same.
+  vault_token_revoke "$VAULT_TOKEN"
   unset VAULT_TOKEN
   [ $rc -eq 0 ] || return 1
   echo "sign: signed $ref with $key (transparency log: $tlog)"
@@ -82,9 +118,17 @@ sign_digest() {
 # verify_signed <channel> <pubkey path> <image ref> — 0 signed by us, non-zero otherwise.
 # Releases are verified --offline: the Rekor entry is bundled with the signature at signing time,
 # so a Sigstore outage cannot turn a good release into a failed check.
+# A refusal must say WHY. Discarding cosign's output made every failure look identical -- an
+# unsigned image, the wrong key, a network fault and a malformed reference all reported the same
+# bare FAIL, and the reason for a refused release is the thing you most need. Quiet on success
+# (cosign prints the whole payload), the error on failure.
 verify_signed() {
-  local channel="$1" pub="$2" ref="$3" flags
+  local channel="$1" pub="$2" ref="$3" flags out rc=0
   if [ "$channel" = prod ]; then flags=(--offline); else flags=(--insecure-ignore-tlog); fi
-  SIGN_EXTRA_MOUNT="$(cd "$(dirname "$pub")" && pwd):/pub:ro" \
-    cosign verify --key "/pub/$(basename "$pub")" "${flags[@]}" "$ref" >/dev/null 2>&1
+  out="$(SIGN_EXTRA_MOUNT="$(cd "$(dirname "$pub")" && pwd):/pub:ro" \
+    cosign verify --key "/pub/$(basename "$pub")" "${flags[@]}" "$ref" 2>&1)" || rc=$?
+  [ $rc -eq 0 ] && return 0
+  printf 'verify: cosign refused %s\n' "$ref" >&2
+  printf '%s\n' "$out" | sed 's/^/      /' >&2
+  return $rc
 }
