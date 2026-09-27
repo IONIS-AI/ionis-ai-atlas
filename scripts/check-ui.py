@@ -19,7 +19,7 @@ import urllib.request
 from playwright.async_api import async_playwright
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8080"
-fails, notes = [], []
+fails, notes, skips = [], [], []
 
 
 def api(path: str):
@@ -36,6 +36,11 @@ OBLAST = api("/adif/enumerations/primary_administrative_subdivision?q=oblast&lim
 
 def check(ok, what):
     (notes if ok else fails).append(("PASS " if ok else "FAIL ") + what)
+
+
+def skip(what, why):
+    """A check that could not run here. Printed and counted, so a green run says what it did not test."""
+    skips.append(f"SKIP {what}: {why}")
 
 
 async def main():
@@ -158,7 +163,10 @@ async def main():
         #      while the new ones load (#51): the new version's Fields request is held back, and the
         #      count must read "…" meanwhile, then the new version's own number.
         versions = [r["adif_version"] for r in api("/adif/releases")[0]]
-        if len(versions) > 1:
+        one_version = f"the engine carries one ADIF version ({versions[0]}); needs two"
+        if len(versions) < 2:
+            skip("landing version switch shows no stale counts (#51)", one_version)
+        else:
             first, other = versions[-1], versions[0]
             fields_n = lambda v: int(api(f"/adif/fields?adif_version={v}&limit=1")[1]["X-Total-Count"])
             cell = pg.locator("tbody tr", has=pg.get_by_role("link", name="Fields", exact=True)).locator("td.num")
@@ -260,7 +268,9 @@ async def main():
         check("(unavailable)" in side.lower() and "(0)" not in side, f"ADIF: the sidebar says unavailable, not (0): {side!r}")
         await broken.close()
         # ...and a version that then loads clears it (#51): only the first version's enumerations fail.
-        if len(versions) > 1:
+        if len(versions) < 2:
+            skip("a failed version, then one that loads, recovers (#51)", one_version)
+        else:
             flaky = await b.new_context(viewport={"width": 1440, "height": 900})
             fp = await flaky.new_page()
             await fp.route(f"**/api/v1/adif/enumerations?adif_version={first}*", lambda r: r.fulfill(status=500, body="{}"))
@@ -278,8 +288,8 @@ async def main():
 
         check(not errors, f"no console errors ({errors[:3]})")
         await b.close()
-    print("\n".join(notes + fails))
-    print(f"\n{len(notes)} passed, {len(fails)} failed")
+    print("\n".join(notes + skips + fails))
+    print(f"\n{len(notes)} passed, {len(fails)} failed, {len(skips)} skipped")
     sys.exit(1 if fails else 0)
 
 
