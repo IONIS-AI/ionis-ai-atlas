@@ -1,0 +1,75 @@
+# Image scan — every night, scan the RELEASED images for vulnerabilities (ionis-ai-atlas#18).
+#
+# A published image never changes, but new CVEs are announced against it every week, so an image
+# that was clean on release day does not stay clean. This re-scans the current release with the
+# same script and threshold the build uses (scripts/scan.sh: fail on any fixable HIGH or CRITICAL)
+# and fails when one appears, which means: rebuild on current packages and publish a patch release.
+#
+# The result shows in three places: the README badge (this workflow's status), the repository's
+# Security tab (SARIF), and an issue opened on failure, so a red night is not missed.
+#
+# GitHub-hosted runners only: this repository is public, and a self-hosted runner on a public
+# repository can be taken over by a fork's pull request. Actions are pinned by commit.
+name: Image scan
+
+on:
+  schedule:
+    - cron: "23 6 * * *"          # daily, 06:23 UTC
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/scan.yml, scripts/scan.sh]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: ${{ matrix.image }} (${{ matrix.platform }})
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write      # upload SARIF to the Security tab
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [ionis-ai-atlas, ionis-ai-atlas-db]
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+
+      # `latest` is the current release: what compose.yaml and the README hand a user.
+      - name: Scan docker.io/ki7mt/${{ matrix.image }}:latest
+        env:
+          ENGINE: docker
+          PLATFORM: ${{ matrix.platform }}
+          SARIF_DIR: sarif
+        run: scripts/scan.sh docker.io/ki7mt/${{ matrix.image }}:latest
+
+      - name: Publish the findings to the Security tab
+        if: always() && hashFiles('sarif/*.sarif') != ''
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2   # v4
+        with:
+          sarif_file: sarif
+          category: ${{ matrix.image }}-${{ matrix.platform }}
+
+  report:
+    name: Open an issue on failure
+    needs: scan
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Open (or update) the image-scan issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly image scan: the released images need a rebuild"
+          n=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
+          body="The nightly scan found fixable HIGH or CRITICAL vulnerabilities in the released images: $RUN
+          Rebuild on current packages and publish a patch release. Close this once the scan is green."
+          if [ -n "$n" ]; then gh issue comment "$n" --body "Still failing: $RUN"
+          else gh issue create --title "$title" --body "$body"; fi

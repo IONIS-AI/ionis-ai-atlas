@@ -2,9 +2,11 @@
 # reference data: the ADIF tier (3.1.6 and 3.1.7, current 3.1.7), loaded and audited at build time
 # (the build fails if the audit does) and re-applied by version on every start, so an upgrade
 # reaches an existing volume.
-FROM registry.access.redhat.com/ubi9/ubi:9.6
+# The current UBI 9 minor with every package upgraded, for the reason given in ../Containerfile.
+FROM registry.access.redhat.com/ubi9/ubi:latest
 
-RUN dnf -y install "https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-$(uname -m)/pgdg-redhat-repo-latest.noarch.rpm" \
+RUN dnf -y upgrade --refresh \
+ && dnf -y install "https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-$(uname -m)/pgdg-redhat-repo-latest.noarch.rpm" \
  && dnf -y install postgresql17-server pgvector_17 python3 \
  && dnf clean all
 

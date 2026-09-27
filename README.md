@@ -1,5 +1,10 @@
 # IONIS-AI Atlas
 
+[![Image scan](https://github.com/IONIS-AI/ionis-ai-atlas/actions/workflows/scan.yml/badge.svg)](https://github.com/IONIS-AI/ionis-ai-atlas/actions/workflows/scan.yml)
+[![Docker Hub](https://img.shields.io/docker/v/ki7mt/ionis-ai-atlas?sort=semver&label=Docker%20Hub)](https://hub.docker.com/r/ki7mt/ionis-ai-atlas)
+[![ADIF](https://img.shields.io/badge/ADIF-3.1.7-blue)](https://adif.org/)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue)](LICENSE)
+
 Explore the IONIS-AI propagation collection. React front end, FastAPI API, PostgreSQL with pgvector,
 shipped as Docker images on docker.io and run with `docker compose up`.
 
@@ -144,8 +149,25 @@ make up         # run the stack from the local images
 
 The API tests need `api/requirements.txt` and `api/requirements-test.txt` installed
 (`python3.12 -m pip install -r api/requirements.txt -r api/requirements-test.txt`).
-`tests/test_compose.py` guards `compose.yaml`: the healthchecks live there, not only in the images,
+`api/tests/test_compose.py` guards `compose.yaml`: the healthchecks live there, not only in the images,
 because podman ignores `HEALTHCHECK` in the OCI-format images the publish step produces.
+
+### Vulnerability scanning
+
+```
+make scan       # scan the local images; fails on any HIGH or CRITICAL vulnerability that has a fix
+```
+
+`scripts/scan.sh` holds the one threshold everything uses: an image fails on a HIGH or CRITICAL
+vulnerability **that has a fix available**. A finding with no fix yet is listed but doesn't fail,
+because no rebuild could remove it. The scanner is [Trivy](https://trivy.dev), run in a container
+pinned by digest, so there's nothing to install. The images build on the current UBI 9 release with
+every package upgraded.
+
+The **Image scan** badge above is a nightly scan of the released images
+(`.github/workflows/scan.yml`). A published image never changes, but new vulnerabilities are
+announced against it all the time. When the badge turns red, the scan has opened an issue: rebuild on
+current packages and publish a patch release. Findings appear in the repository's Security tab.
 
 `db/load/` is vendored from an ionis-core release tag, which is the source of truth for the loader,
 the schema and the adif.org checksums: `scripts/sync-from-ionis-core.sh <tag>` updates it, and
