@@ -8,14 +8,18 @@ Data specification: `ionis-core/docs/IONIS-DATA-SPEC.md`.
 
 ## Run it
 
+There is no public release yet. From a clone, `make dev` builds and runs the current `main` (see
+"Run from a clone" below). Once released:
+
 ```
 docker compose up          # or: podman compose up
 ```
 then open <http://localhost:8080>. The API's interactive documentation is at <http://localhost:8080/api/docs>.
 
-Images on docker.io, all under `ki7mt`: `ki7mt/ionis-ai-atlas` (the app), `ki7mt/ionis-ai-atlas-db`
-(the engine) and one `ki7mt/ionis-ai-atlas-data-<dataset>` per dataset. Development images carry a
-`-dev` suffix and are private.
+Images on docker.io, all under `ki7mt`, public: `ki7mt/ionis-ai-atlas` (the app),
+`ki7mt/ionis-ai-atlas-db` (the engine) and one `ki7mt/ionis-ai-atlas-data-<dataset>` per dataset.
+Development builds go to one private repository, `ki7mt/ionis-ai-atlas-dev`, with the image kind in
+the tag (`app-<sha>`, `db-<sha>`).
 
 ## What is in it today
 
@@ -36,12 +40,13 @@ The development overlay runs the database without its volume, so every rebuild s
 
 ## Publish (maintainers)
 
-The dev release runs the same process prod will, into **private** `ki7mt/<image>-dev` repositories.
+The dev release runs the same process prod will, into **one private** repository,
+`ki7mt/ionis-ai-atlas-dev`, with the image kind in the tag.
 Each architecture is built natively on its own machine, from a clean checkout of `main`:
 
 ```
-make publish                     # on 9975 (amd64), then on the M3 (arm64): pushes <image>-dev:<sha>-<arch>
-make publish-manifest            # on either, once both are pushed: <image>-dev:<sha> for both architectures
+make publish                     # on 9975 (amd64), then the M3 (arm64): ionis-ai-atlas-dev:<kind>-<sha>-<arch>
+make publish-manifest            # on either, once both are pushed: ionis-ai-atlas-dev:<kind>-<sha>
 make verify-pull TAG=<sha>       # pull from docker.io and prove the published compose file runs
 ```
 
