@@ -18,9 +18,14 @@ from psycopg_pool import ConnectionPool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .models import (Band, Contest, Current, DataType, DxccEntity, Enumeration, EnumerationSummary, Field,
-                     Health, Mode, Release)
+                     Health, Mode, Release, Version)
 
 API = "/api/v1"
+# The release, built into the image by publish.sh (Containerfile ARG -> ENV). Image LABELS carry it
+# too, but a container cannot read its own labels. Anything publish did not build says "dev", so an
+# unreleased build can never report itself as a release.
+VERSION = os.environ.get("ATLAS_VERSION") or "dev"
+REVISION = os.environ.get("ATLAS_REVISION") or "unknown"
 STATIC = Path(os.environ.get("ATLAS_STATIC", "/app/static"))  # React build + Swagger UI assets
 DB_URL = os.environ.get("ATLAS_DB_URL", "postgresql://atlas_ro:atlas@db:5432/ionis")
 
@@ -40,7 +45,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="IONIS-AI Atlas API",
-    version="1.0.0",
+    version=VERSION,
     description=(
         "Read-only access to the published IONIS-AI collection. Every field is defined by "
         "ADIF 3.1.7 or by the IONIS-AI extension (ionis-core docs/IONIS-DATA-SPEC.md). "
@@ -109,6 +114,13 @@ VersionParam = Query(None, description="ADIF version, e.g. 3.1.7. Defaults to th
 def health() -> dict:
     rows("SELECT 1")
     return {"status": "ok"}
+
+
+@app.get(f"{API}/version", response_model=Version, tags=["service"])
+def version() -> dict:
+    """Which release this service runs. What the image says about itself: proof that a deployment
+    runs a signed release is verifying the running image's digest (see SIGNING.md)."""
+    return {"version": VERSION, "revision": REVISION}
 
 
 @app.get(f"{API}/adif/releases", response_model=list[Release], tags=["adif"])
