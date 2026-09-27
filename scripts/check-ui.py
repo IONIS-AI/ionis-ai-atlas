@@ -119,7 +119,7 @@ async def main():
         # 8. Curated views page and search on the server too
         await pg.goto(f"{BASE}/adif/enumerations/mode?q=ft4")
         await settle()
-        band = await pg.locator("tbody tr td strong").first.inner_text()
+        first = await pg.locator("tbody tr td strong").first.inner_text()
         check(first == "MFSK" and (await count()).startswith("1–1 of 1"), "mode search by submode finds MFSK")
         last = -(-FIELDS // 50)
         await pg.goto(f"{BASE}/adif/fields?size=50&page={last}")
