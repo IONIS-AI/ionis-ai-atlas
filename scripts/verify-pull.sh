@@ -31,7 +31,9 @@ echo "verify-pull: $SHA"
 $ENGINE rmi -f "$APP" "$DB" >/dev/null 2>&1 || true
 $ENGINE pull -q "$APP" >/dev/null && $ENGINE pull -q "$DB" >/dev/null
 echo "  pulled from docker.io, no local copies used"
-"${COMPOSE[@]}" up -d >/dev/null 2>&1
+if ! out="$("${COMPOSE[@]}" up -d 2>&1)"; then   # say why, rather than exiting silently under set -e
+  echo "verify-pull: compose up failed:"; grep -v '^\s*$' <<<"$out" | tail -5 | sed 's/^/    /'; exit 1
+fi
 
 check "stack comes up healthy"               'wait_up'
 check "ADIF current is 3.1.7"                '[ "$(curl -s $URL/api/v1/adif/current | jq -r .adif_version)" = 3.1.7 ]'

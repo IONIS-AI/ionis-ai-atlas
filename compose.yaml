@@ -1,9 +1,11 @@
 # IONIS-AI Atlas. `docker compose up`, then open http://localhost:8080
-# The two containers together are held to the target machine's budget: 4 CPUs and 8 GB
+# The two containers together are held to the target machine's budget: 4 CPUs and 8 GB (Atlas
+# SPEC.md, "Target machine"). The database port is not published outside this network.
 # Images are full references so the dev channel can use one repository with the kind in the tag.
 # There is no public release yet ("unreleased"); a release pins exact versions here. To run from a
 # clone today, use `make dev`.
-# (Atlas SPEC.md, "Target machine"). The database port is not published outside this network.
+# Healthchecks live here, not only in the images: the published images are OCI format (needed for
+# their SBOM and provenance), and podman ignores HEALTHCHECK in OCI images. Here, every engine runs them.
 name: ionis-ai-atlas
 services:
   atlas:
@@ -19,6 +21,11 @@ services:
     tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "python3.12", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/api/v1/health',timeout=4).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
   db:
     image: ${ATLAS_DB_IMAGE:-docker.io/ki7mt/ionis-ai-atlas-db:unreleased}
     cpus: 3
@@ -27,5 +34,12 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     volumes: [pgdata:/var/lib/pgsql/17/data]
+    healthcheck:
+      # Fails while the entrypoint reconciles on the local socket only, so Atlas starts after it.
+      test: ["CMD-SHELL", "pg_isready -d ionis -U atlas_ro -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 120s   # a first start on an empty volume loads ADIF before it can answer
 volumes:
   pgdata:

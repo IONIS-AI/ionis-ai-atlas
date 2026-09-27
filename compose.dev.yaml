@@ -4,8 +4,7 @@
 #   make dev-down
 # The database runs without the pgdata volume, so each rebuild serves the data baked into the new
 # image. With the volume, Docker seeds it from the image only once, and a pull would keep showing the
-# old data. The database healthcheck is repeated here because an OCI-format build (podman's default)
-# drops the image's HEALTHCHECK, and `atlas` waits on it.
+# old data.
 services:
   atlas:
     image: localhost/ionis-ai-atlas:dev
@@ -16,8 +15,3 @@ services:
     build: { context: db, dockerfile: Containerfile }
     pull_policy: build
     volumes: !reset []
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -d ionis -U atlas_ro -h 127.0.0.1"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
