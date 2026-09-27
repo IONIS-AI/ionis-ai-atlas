@@ -188,6 +188,18 @@ def ddl(versions: dict) -> str:
         "",
         "CREATE SCHEMA IF NOT EXISTS adif;",
         "",
+        "-- UPGRADES AN EXISTING DATABASE, NOT ONLY A FRESH ONE (Atlas SPEC R17). This file is",
+        "-- re-applied on every start, so each step is idempotent: new tables are created, new",
+        "-- columns added, a column that now holds lists widened to text, and the natural-key",
+        "-- indexes and cross-reference keys rebuilt from this version set. The cross-reference",
+        "-- keys are dropped here, before any column is altered, and re-added at the end.",
+        "DO $$ DECLARE r record; BEGIN",
+        "  FOR r IN SELECT conrelid::regclass AS t, conname FROM pg_constraint",
+        "           WHERE contype = 'f' AND connamespace = 'adif'::regnamespace AND conname LIKE '%\\_fk' LOOP",
+        "    EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', r.t, r.conname);",
+        "  END LOOP;",
+        "END $$;",
+        "",
         "CREATE TABLE IF NOT EXISTS adif.release (",
         "    adif_version  text PRIMARY KEY,",
         "    status        text NOT NULL,",
@@ -209,6 +221,22 @@ def ddl(versions: dict) -> str:
         "",
     ]
 
+    def upgrade(name, hdrs):
+        """What CREATE TABLE IF NOT EXISTS cannot do for a table that already exists: add the
+        columns a later ADIF version introduced, and widen to text a column whose values stopped
+        fitting its type (a DXCC Entity Code that now holds '43,202'). Text is never narrowed:
+        a column typed here keeps rows an older load wrote."""
+        cols = [(col(h), sql_type(h, name)) for h in hdrs]
+        lines = [f"ALTER TABLE adif.{name} " + ", ".join(f"ADD COLUMN IF NOT EXISTS {c} {t}" for c, t in cols) + ";"]
+        text = [c for c, t in cols if t == "text"]
+        if text:
+            lines.append("DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY[" + ", ".join(f"'{c}'" for c in text) + "] LOOP")
+            lines.append(f"  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' "
+                         f"AND table_name = '{name}' AND column_name = c) <> 'text' THEN")
+            lines.append(f"    EXECUTE format('ALTER TABLE adif.{name} ALTER COLUMN %I TYPE text USING %I::text', c, c);")
+            lines.append("  END IF; END LOOP; END $$;")
+        return lines
+
     def table(name, hdrs, key_cols, extra=""):
         lines = [f"CREATE TABLE IF NOT EXISTS adif.{name} (",
                  "    adif_version text NOT NULL REFERENCES adif.release (adif_version),"]
@@ -216,7 +244,7 @@ def ddl(versions: dict) -> str:
         lines.append("    record       jsonb NOT NULL,")
         lines.append(f"    PRIMARY KEY (adif_version, {', '.join(key_cols)}){extra}")
         lines.append(");")
-        return lines
+        return lines + upgrade(name, hdrs)
 
     out += table("datatype", headers(versions, "DataTypes"), ["data_type_name"])
     out.append("")
@@ -237,11 +265,14 @@ def ddl(versions: dict) -> str:
         lines.append("    record       jsonb NOT NULL,")
         lines.append("    PRIMARY KEY (adif_version, record_key)")
         lines.append(");")
-        out += lines
+        out += lines + upgrade(t, hdrs)
+        # Rebuilt every run: a code unique until a later version reuses it must lose its index,
+        # or that version's load fails on a constraint an older version set.
+        out.append(f"DROP INDEX IF EXISTS adif.{t}_natural;")
         nk = unique_natural_key(versions, name, hdrs)
         if nk:
             cols = ", ".join(col(c) for c in nk)
-            out.append(f"CREATE UNIQUE INDEX IF NOT EXISTS {t}_natural ON adif.{t} (adif_version, {cols});")
+            out.append(f"CREATE UNIQUE INDEX {t}_natural ON adif.{t} (adif_version, {cols});")
         else:
             out.append(f"-- {name}: no column set is unique in every version; reference it by record_key.")
         if "DXCC Entity Code" in hdrs and name != "DXCC_Entity_Code" and sql_type("DXCC Entity Code", t) == "integer":

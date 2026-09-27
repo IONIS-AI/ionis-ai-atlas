@@ -7,6 +7,18 @@
 
 CREATE SCHEMA IF NOT EXISTS adif;
 
+-- UPGRADES AN EXISTING DATABASE, NOT ONLY A FRESH ONE (Atlas SPEC R17). This file is
+-- re-applied on every start, so each step is idempotent: new tables are created, new
+-- columns added, a column that now holds lists widened to text, and the natural-key
+-- indexes and cross-reference keys rebuilt from this version set. The cross-reference
+-- keys are dropped here, before any column is altered, and re-added at the end.
+DO $$ DECLARE r record; BEGIN
+  FOR r IN SELECT conrelid::regclass AS t, conname FROM pg_constraint
+           WHERE contype = 'f' AND connamespace = 'adif'::regnamespace AND conname LIKE '%\_fk' LOOP
+    EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', r.t, r.conname);
+  END LOOP;
+END $$;
+
 CREATE TABLE IF NOT EXISTS adif.release (
     adif_version  text PRIMARY KEY,
     status        text NOT NULL,
@@ -38,6 +50,11 @@ CREATE TABLE IF NOT EXISTS adif.datatype (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, data_type_name)
 );
+ALTER TABLE adif.datatype ADD COLUMN IF NOT EXISTS data_type_name text, ADD COLUMN IF NOT EXISTS data_type_indicator text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS minimum_value text, ADD COLUMN IF NOT EXISTS maximum_value text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['data_type_name', 'data_type_indicator', 'description', 'minimum_value', 'maximum_value', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'datatype' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.datatype ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
 
 CREATE TABLE IF NOT EXISTS adif.field (
     adif_version text NOT NULL REFERENCES adif.release (adif_version),
@@ -53,6 +70,11 @@ CREATE TABLE IF NOT EXISTS adif.field (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, field_name)
 );
+ALTER TABLE adif.field ADD COLUMN IF NOT EXISTS field_name text, ADD COLUMN IF NOT EXISTS data_type text, ADD COLUMN IF NOT EXISTS enumeration text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS header_field boolean, ADD COLUMN IF NOT EXISTS minimum_value text, ADD COLUMN IF NOT EXISTS maximum_value text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['field_name', 'data_type', 'enumeration', 'description', 'minimum_value', 'maximum_value', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'field' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.field ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
 -- No foreign key on data_type: CREDIT_GRANTED / CREDIT_SUBMITTED name two types
 -- ('CreditList,AwardList'). The load checks every listed type instead (see load_sql).
 
@@ -70,7 +92,13 @@ CREATE TABLE IF NOT EXISTS adif.arrl_section (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS arrl_section_natural ON adif.arrl_section (adif_version, abbreviation);
+ALTER TABLE adif.arrl_section ADD COLUMN IF NOT EXISTS abbreviation text, ADD COLUMN IF NOT EXISTS section_name text, ADD COLUMN IF NOT EXISTS dxcc_entity_code text, ADD COLUMN IF NOT EXISTS from_date timestamptz, ADD COLUMN IF NOT EXISTS deleted_date timestamptz, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['abbreviation', 'section_name', 'dxcc_entity_code', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'arrl_section' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.arrl_section ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.arrl_section_natural;
+CREATE UNIQUE INDEX arrl_section_natural ON adif.arrl_section (adif_version, abbreviation);
 -- ARRL_Section: dxcc_entity_code holds lists in some rows (e.g. '43,202'); text, no foreign key.
 
 -- Ant_Path
@@ -84,7 +112,13 @@ CREATE TABLE IF NOT EXISTS adif.ant_path (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS ant_path_natural ON adif.ant_path (adif_version, abbreviation);
+ALTER TABLE adif.ant_path ADD COLUMN IF NOT EXISTS abbreviation text, ADD COLUMN IF NOT EXISTS meaning text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['abbreviation', 'meaning', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'ant_path' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.ant_path ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.ant_path_natural;
+CREATE UNIQUE INDEX ant_path_natural ON adif.ant_path (adif_version, abbreviation);
 
 -- Award
 CREATE TABLE IF NOT EXISTS adif.award (
@@ -96,7 +130,13 @@ CREATE TABLE IF NOT EXISTS adif.award (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS award_natural ON adif.award (adif_version, award);
+ALTER TABLE adif.award ADD COLUMN IF NOT EXISTS award text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['award', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'award' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.award ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.award_natural;
+CREATE UNIQUE INDEX award_natural ON adif.award (adif_version, award);
 
 -- Award_Sponsor
 CREATE TABLE IF NOT EXISTS adif.award_sponsor (
@@ -109,7 +149,13 @@ CREATE TABLE IF NOT EXISTS adif.award_sponsor (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS award_sponsor_natural ON adif.award_sponsor (adif_version, sponsor);
+ALTER TABLE adif.award_sponsor ADD COLUMN IF NOT EXISTS sponsor text, ADD COLUMN IF NOT EXISTS sponsoring_organization text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['sponsor', 'sponsoring_organization', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'award_sponsor' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.award_sponsor ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.award_sponsor_natural;
+CREATE UNIQUE INDEX award_sponsor_natural ON adif.award_sponsor (adif_version, sponsor);
 
 -- Band
 CREATE TABLE IF NOT EXISTS adif.band (
@@ -123,7 +169,13 @@ CREATE TABLE IF NOT EXISTS adif.band (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS band_natural ON adif.band (adif_version, band);
+ALTER TABLE adif.band ADD COLUMN IF NOT EXISTS band text, ADD COLUMN IF NOT EXISTS lower_freq_mhz numeric, ADD COLUMN IF NOT EXISTS upper_freq_mhz numeric, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['band', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'band' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.band ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.band_natural;
+CREATE UNIQUE INDEX band_natural ON adif.band (adif_version, band);
 
 -- Contest_ID
 CREATE TABLE IF NOT EXISTS adif.contest_id (
@@ -136,7 +188,13 @@ CREATE TABLE IF NOT EXISTS adif.contest_id (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS contest_id_natural ON adif.contest_id (adif_version, contest_id);
+ALTER TABLE adif.contest_id ADD COLUMN IF NOT EXISTS contest_id text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['contest_id', 'description', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'contest_id' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.contest_id ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.contest_id_natural;
+CREATE UNIQUE INDEX contest_id_natural ON adif.contest_id (adif_version, contest_id);
 
 -- Continent
 CREATE TABLE IF NOT EXISTS adif.continent (
@@ -149,7 +207,13 @@ CREATE TABLE IF NOT EXISTS adif.continent (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS continent_natural ON adif.continent (adif_version, abbreviation);
+ALTER TABLE adif.continent ADD COLUMN IF NOT EXISTS abbreviation text, ADD COLUMN IF NOT EXISTS continent text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['abbreviation', 'continent', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'continent' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.continent ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.continent_natural;
+CREATE UNIQUE INDEX continent_natural ON adif.continent (adif_version, abbreviation);
 
 -- Credit
 CREATE TABLE IF NOT EXISTS adif.credit (
@@ -164,7 +228,13 @@ CREATE TABLE IF NOT EXISTS adif.credit (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS credit_natural ON adif.credit (adif_version, credit_for);
+ALTER TABLE adif.credit ADD COLUMN IF NOT EXISTS credit_for text, ADD COLUMN IF NOT EXISTS sponsor text, ADD COLUMN IF NOT EXISTS award text, ADD COLUMN IF NOT EXISTS facet text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['credit_for', 'sponsor', 'award', 'facet', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'credit' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.credit ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.credit_natural;
+CREATE UNIQUE INDEX credit_natural ON adif.credit (adif_version, credit_for);
 
 -- DXCC_Entity_Code
 CREATE TABLE IF NOT EXISTS adif.dxcc_entity_code (
@@ -178,7 +248,13 @@ CREATE TABLE IF NOT EXISTS adif.dxcc_entity_code (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS dxcc_entity_code_natural ON adif.dxcc_entity_code (adif_version, entity_code);
+ALTER TABLE adif.dxcc_entity_code ADD COLUMN IF NOT EXISTS entity_code integer, ADD COLUMN IF NOT EXISTS entity_name text, ADD COLUMN IF NOT EXISTS deleted boolean, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['entity_name', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'dxcc_entity_code' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.dxcc_entity_code ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.dxcc_entity_code_natural;
+CREATE UNIQUE INDEX dxcc_entity_code_natural ON adif.dxcc_entity_code (adif_version, entity_code);
 
 -- EQSL_AG
 CREATE TABLE IF NOT EXISTS adif.eqsl_ag (
@@ -191,7 +267,13 @@ CREATE TABLE IF NOT EXISTS adif.eqsl_ag (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS eqsl_ag_natural ON adif.eqsl_ag (adif_version, status);
+ALTER TABLE adif.eqsl_ag ADD COLUMN IF NOT EXISTS status text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['status', 'description', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'eqsl_ag' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.eqsl_ag ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.eqsl_ag_natural;
+CREATE UNIQUE INDEX eqsl_ag_natural ON adif.eqsl_ag (adif_version, status);
 
 -- Mode
 CREATE TABLE IF NOT EXISTS adif.mode (
@@ -205,7 +287,13 @@ CREATE TABLE IF NOT EXISTS adif.mode (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS mode_natural ON adif.mode (adif_version, mode);
+ALTER TABLE adif.mode ADD COLUMN IF NOT EXISTS mode text, ADD COLUMN IF NOT EXISTS submodes text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['mode', 'submodes', 'description', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'mode' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.mode ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.mode_natural;
+CREATE UNIQUE INDEX mode_natural ON adif.mode (adif_version, mode);
 
 -- Morse_Key_Type
 CREATE TABLE IF NOT EXISTS adif.morse_key_type (
@@ -221,7 +309,13 @@ CREATE TABLE IF NOT EXISTS adif.morse_key_type (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS morse_key_type_natural ON adif.morse_key_type (adif_version, abbreviation);
+ALTER TABLE adif.morse_key_type ADD COLUMN IF NOT EXISTS abbreviation text, ADD COLUMN IF NOT EXISTS meaning text, ADD COLUMN IF NOT EXISTS characteristics text, ADD COLUMN IF NOT EXISTS morse_composition text, ADD COLUMN IF NOT EXISTS examples text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['abbreviation', 'meaning', 'characteristics', 'morse_composition', 'examples', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'morse_key_type' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.morse_key_type ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.morse_key_type_natural;
+CREATE UNIQUE INDEX morse_key_type_natural ON adif.morse_key_type (adif_version, abbreviation);
 
 -- Primary_Administrative_Subdivision
 CREATE TABLE IF NOT EXISTS adif.primary_administrative_subdivision (
@@ -241,6 +335,12 @@ CREATE TABLE IF NOT EXISTS adif.primary_administrative_subdivision (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
+ALTER TABLE adif.primary_administrative_subdivision ADD COLUMN IF NOT EXISTS code text, ADD COLUMN IF NOT EXISTS primary_administrative_subdivision text, ADD COLUMN IF NOT EXISTS dxcc_entity_code integer, ADD COLUMN IF NOT EXISTS contained_within text, ADD COLUMN IF NOT EXISTS oblast_no text, ADD COLUMN IF NOT EXISTS cq_zone text, ADD COLUMN IF NOT EXISTS itu_zone text, ADD COLUMN IF NOT EXISTS prefix text, ADD COLUMN IF NOT EXISTS deleted boolean, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['code', 'primary_administrative_subdivision', 'contained_within', 'oblast_no', 'cq_zone', 'itu_zone', 'prefix', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'primary_administrative_subdivision' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.primary_administrative_subdivision ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.primary_administrative_subdivision_natural;
 -- Primary_Administrative_Subdivision: no column set is unique in every version; reference it by record_key.
 
 -- Propagation_Mode
@@ -254,7 +354,13 @@ CREATE TABLE IF NOT EXISTS adif.propagation_mode (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS propagation_mode_natural ON adif.propagation_mode (adif_version, enumeration);
+ALTER TABLE adif.propagation_mode ADD COLUMN IF NOT EXISTS enumeration text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['enumeration', 'description', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'propagation_mode' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.propagation_mode ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.propagation_mode_natural;
+CREATE UNIQUE INDEX propagation_mode_natural ON adif.propagation_mode (adif_version, enumeration);
 
 -- QSL_Medium
 CREATE TABLE IF NOT EXISTS adif.qsl_medium (
@@ -267,7 +373,13 @@ CREATE TABLE IF NOT EXISTS adif.qsl_medium (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS qsl_medium_natural ON adif.qsl_medium (adif_version, medium);
+ALTER TABLE adif.qsl_medium ADD COLUMN IF NOT EXISTS medium text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['medium', 'description', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'qsl_medium' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.qsl_medium ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.qsl_medium_natural;
+CREATE UNIQUE INDEX qsl_medium_natural ON adif.qsl_medium (adif_version, medium);
 
 -- QSL_Rcvd
 CREATE TABLE IF NOT EXISTS adif.qsl_rcvd (
@@ -281,7 +393,13 @@ CREATE TABLE IF NOT EXISTS adif.qsl_rcvd (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS qsl_rcvd_natural ON adif.qsl_rcvd (adif_version, status);
+ALTER TABLE adif.qsl_rcvd ADD COLUMN IF NOT EXISTS status text, ADD COLUMN IF NOT EXISTS meaning text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['status', 'meaning', 'description', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'qsl_rcvd' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.qsl_rcvd ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.qsl_rcvd_natural;
+CREATE UNIQUE INDEX qsl_rcvd_natural ON adif.qsl_rcvd (adif_version, status);
 
 -- QSL_Sent
 CREATE TABLE IF NOT EXISTS adif.qsl_sent (
@@ -295,7 +413,13 @@ CREATE TABLE IF NOT EXISTS adif.qsl_sent (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS qsl_sent_natural ON adif.qsl_sent (adif_version, status);
+ALTER TABLE adif.qsl_sent ADD COLUMN IF NOT EXISTS status text, ADD COLUMN IF NOT EXISTS meaning text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['status', 'meaning', 'description', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'qsl_sent' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.qsl_sent ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.qsl_sent_natural;
+CREATE UNIQUE INDEX qsl_sent_natural ON adif.qsl_sent (adif_version, status);
 
 -- QSL_Via
 CREATE TABLE IF NOT EXISTS adif.qsl_via (
@@ -308,7 +432,13 @@ CREATE TABLE IF NOT EXISTS adif.qsl_via (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS qsl_via_natural ON adif.qsl_via (adif_version, via);
+ALTER TABLE adif.qsl_via ADD COLUMN IF NOT EXISTS via text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['via', 'description', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'qsl_via' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.qsl_via ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.qsl_via_natural;
+CREATE UNIQUE INDEX qsl_via_natural ON adif.qsl_via (adif_version, via);
 
 -- QSO_Complete
 CREATE TABLE IF NOT EXISTS adif.qso_complete (
@@ -321,7 +451,13 @@ CREATE TABLE IF NOT EXISTS adif.qso_complete (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS qso_complete_natural ON adif.qso_complete (adif_version, abbreviation);
+ALTER TABLE adif.qso_complete ADD COLUMN IF NOT EXISTS abbreviation text, ADD COLUMN IF NOT EXISTS meaning text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['abbreviation', 'meaning', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'qso_complete' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.qso_complete ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.qso_complete_natural;
+CREATE UNIQUE INDEX qso_complete_natural ON adif.qso_complete (adif_version, abbreviation);
 
 -- QSO_Download_Status
 CREATE TABLE IF NOT EXISTS adif.qso_download_status (
@@ -334,7 +470,13 @@ CREATE TABLE IF NOT EXISTS adif.qso_download_status (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS qso_download_status_natural ON adif.qso_download_status (adif_version, status);
+ALTER TABLE adif.qso_download_status ADD COLUMN IF NOT EXISTS status text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['status', 'description', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'qso_download_status' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.qso_download_status ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.qso_download_status_natural;
+CREATE UNIQUE INDEX qso_download_status_natural ON adif.qso_download_status (adif_version, status);
 
 -- QSO_Upload_Status
 CREATE TABLE IF NOT EXISTS adif.qso_upload_status (
@@ -347,7 +489,13 @@ CREATE TABLE IF NOT EXISTS adif.qso_upload_status (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS qso_upload_status_natural ON adif.qso_upload_status (adif_version, status);
+ALTER TABLE adif.qso_upload_status ADD COLUMN IF NOT EXISTS status text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['status', 'description', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'qso_upload_status' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.qso_upload_status ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.qso_upload_status_natural;
+CREATE UNIQUE INDEX qso_upload_status_natural ON adif.qso_upload_status (adif_version, status);
 
 -- Region
 CREATE TABLE IF NOT EXISTS adif.region (
@@ -365,6 +513,12 @@ CREATE TABLE IF NOT EXISTS adif.region (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
+ALTER TABLE adif.region ADD COLUMN IF NOT EXISTS region_entity_code text, ADD COLUMN IF NOT EXISTS dxcc_entity_code integer, ADD COLUMN IF NOT EXISTS region text, ADD COLUMN IF NOT EXISTS prefix text, ADD COLUMN IF NOT EXISTS applicability text, ADD COLUMN IF NOT EXISTS start_date timestamptz, ADD COLUMN IF NOT EXISTS end_date timestamptz, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['region_entity_code', 'region', 'prefix', 'applicability', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'region' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.region ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.region_natural;
 -- Region: no column set is unique in every version; reference it by record_key.
 
 -- Secondary_Administrative_Subdivision
@@ -381,7 +535,13 @@ CREATE TABLE IF NOT EXISTS adif.secondary_administrative_subdivision (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS secondary_administrative_subdivision_natural ON adif.secondary_administrative_subdivision (adif_version, code);
+ALTER TABLE adif.secondary_administrative_subdivision ADD COLUMN IF NOT EXISTS code text, ADD COLUMN IF NOT EXISTS secondary_administrative_subdivision text, ADD COLUMN IF NOT EXISTS dxcc_entity_code integer, ADD COLUMN IF NOT EXISTS alaska_judicial_district text, ADD COLUMN IF NOT EXISTS deleted boolean, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['code', 'secondary_administrative_subdivision', 'alaska_judicial_district', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'secondary_administrative_subdivision' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.secondary_administrative_subdivision ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.secondary_administrative_subdivision_natural;
+CREATE UNIQUE INDEX secondary_administrative_subdivision_natural ON adif.secondary_administrative_subdivision (adif_version, code);
 
 -- Secondary_Administrative_Subdivision_Alt
 CREATE TABLE IF NOT EXISTS adif.secondary_administrative_subdivision_alt (
@@ -397,7 +557,13 @@ CREATE TABLE IF NOT EXISTS adif.secondary_administrative_subdivision_alt (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS secondary_administrative_subdivision_alt_natural ON adif.secondary_administrative_subdivision_alt (adif_version, code);
+ALTER TABLE adif.secondary_administrative_subdivision_alt ADD COLUMN IF NOT EXISTS code text, ADD COLUMN IF NOT EXISTS dxcc_entity_code integer, ADD COLUMN IF NOT EXISTS region text, ADD COLUMN IF NOT EXISTS district text, ADD COLUMN IF NOT EXISTS deleted boolean, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['code', 'region', 'district', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'secondary_administrative_subdivision_alt' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.secondary_administrative_subdivision_alt ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.secondary_administrative_subdivision_alt_natural;
+CREATE UNIQUE INDEX secondary_administrative_subdivision_alt_natural ON adif.secondary_administrative_subdivision_alt (adif_version, code);
 
 -- Submode
 CREATE TABLE IF NOT EXISTS adif.submode (
@@ -411,7 +577,13 @@ CREATE TABLE IF NOT EXISTS adif.submode (
     record       jsonb NOT NULL,
     PRIMARY KEY (adif_version, record_key)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS submode_natural ON adif.submode (adif_version, submode);
+ALTER TABLE adif.submode ADD COLUMN IF NOT EXISTS submode text, ADD COLUMN IF NOT EXISTS mode text, ADD COLUMN IF NOT EXISTS description text, ADD COLUMN IF NOT EXISTS import_only boolean, ADD COLUMN IF NOT EXISTS comments text;
+DO $$ DECLARE c text; BEGIN FOREACH c IN ARRAY ARRAY['submode', 'mode', 'description', 'comments'] LOOP
+  IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = 'submode' AND column_name = c) <> 'text' THEN
+    EXECUTE format('ALTER TABLE adif.submode ALTER COLUMN %I TYPE text USING %I::text', c, c);
+  END IF; END LOOP; END $$;
+DROP INDEX IF EXISTS adif.submode_natural;
+CREATE UNIQUE INDEX submode_natural ON adif.submode (adif_version, submode);
 
 -- Cross-references ADIF itself defines. A load that violates one fails whole.
 ALTER TABLE adif.primary_administrative_subdivision DROP CONSTRAINT IF EXISTS primary_administrative_subdivision_dxcc_entity_code_fk;
