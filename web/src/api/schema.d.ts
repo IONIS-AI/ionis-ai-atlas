@@ -14,6 +14,7 @@ export interface paths {
         /**
          * Bands
          * @description ADIF's Band enumeration: name and frequency range in MHz, in frequency order.
+         *     Curated view of `/adif/enumerations/band`.
          */
         get: operations["bands_api_v1_adif_bands_get"];
         put?: never;
@@ -33,7 +34,7 @@ export interface paths {
         };
         /**
          * Contests
-         * @description ADIF's Contest_ID enumeration.
+         * @description ADIF's Contest_ID enumeration. Curated view of `/adif/enumerations/contest_id`.
          */
         get: operations["contests_api_v1_adif_contests_get"];
         put?: never;
@@ -73,7 +74,7 @@ export interface paths {
         };
         /**
          * Datatypes
-         * @description ADIF's data types (GridSquare, Date, Number, ...).
+         * @description ADIF's data types (`datatypes.json`: GridSquare, Date, Number, ...).
          */
         get: operations["datatypes_api_v1_adif_datatypes_get"];
         put?: never;
@@ -94,6 +95,7 @@ export interface paths {
         /**
          * Dxcc
          * @description ADIF's DXCC Entity Code enumeration, deleted entities included and marked.
+         *     Curated view of `/adif/enumerations/dxcc_entity_code`.
          */
         get: operations["dxcc_api_v1_adif_dxcc_get"];
         put?: never;
@@ -113,7 +115,8 @@ export interface paths {
         };
         /**
          * Enumerations
-         * @description Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x).
+         * @description Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x), its
+         *     canonical route segment (`table`) and the file ADIF publishes it as.
          */
         get: operations["enumerations_api_v1_adif_enumerations_get"];
         put?: never;
@@ -133,8 +136,14 @@ export interface paths {
         };
         /**
          * Enumeration
-         * @description One ADIF enumeration, every record, with the columns ADIF defines for it. `name` is ADIF's
-         *     enumeration name (e.g. Propagation_Mode) or its table name; anything else is 404.
+         * @description One ADIF enumeration, with the columns ADIF defines for it. **The canonical route segment is
+         *     the table name**, ADIF's name in lower case (e.g. `secondary_administrative_subdivision`), which
+         *     is also the suffix of the file ADIF publishes it as; ADIF's own spelling
+         *     (`Secondary_Administrative_Subdivision`) is accepted too, in any case. Anything else is 404.
+         *
+         *     Paged with `limit` / `offset`, searched with `q`, and **filtered exactly on any of its columns**
+         *     by name, e.g. `?dxcc_entity_code=15&deleted=false`. A filter naming a column the enumeration
+         *     does not have is refused (400) rather than ignored.
          */
         get: operations["enumeration_api_v1_adif_enumerations__name__get"];
         put?: never;
@@ -154,7 +163,7 @@ export interface paths {
         };
         /**
          * Fields
-         * @description ADIF's fields: the vocabulary every IONIS-AI column is defined against.
+         * @description ADIF's fields (`fields.json`): the vocabulary every IONIS-AI column is defined against.
          */
         get: operations["fields_api_v1_adif_fields_get"];
         put?: never;
@@ -174,7 +183,8 @@ export interface paths {
         };
         /**
          * Modes
-         * @description ADIF's Mode enumeration, each with its submodes (e.g. MFSK → FT4).
+         * @description ADIF's Mode enumeration, each with its submodes (e.g. MFSK → FT4). A search matches submodes
+         *     too, so `q=ft4` finds MFSK. Curated view of `/adif/enumerations/mode`.
          */
         get: operations["modes_api_v1_adif_modes_get"];
         put?: never;
@@ -314,15 +324,27 @@ export interface components {
             adif_version: string;
             /** Columns */
             columns: components["schemas"]["Column"][];
+            /** File */
+            file: string;
+            /** Limit */
+            limit: number | null;
             /** Name */
             name: string;
+            /** Offset */
+            offset: number;
             /** Rows */
             rows: {
                 [key: string]: unknown;
             }[];
+            /** Table */
+            table: string;
+            /** Total */
+            total: number;
         };
         /** EnumerationSummary */
         EnumerationSummary: {
+            /** File */
+            file: string;
             /** Import Only Records */
             import_only_records: number;
             /** Name */
@@ -417,6 +439,12 @@ export interface operations {
             query?: {
                 /** @description ADIF version, e.g. 3.1.7. Defaults to the lab's current version. */
                 adif_version?: string | null;
+                /** @description Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour). */
+                limit?: number | null;
+                /** @description Rows to skip, for the page after `limit` rows. */
+                offset?: number;
+                /** @description Case-insensitive text search across the listed columns, applied before paging. */
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -427,6 +455,10 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Present while more rows remain: `<url>; rel="next"` */
+                    Link?: string;
+                    /** @description Rows matching the filters, across all pages */
+                    "X-Total-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -449,6 +481,12 @@ export interface operations {
             query?: {
                 /** @description ADIF version, e.g. 3.1.7. Defaults to the lab's current version. */
                 adif_version?: string | null;
+                /** @description Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour). */
+                limit?: number | null;
+                /** @description Rows to skip, for the page after `limit` rows. */
+                offset?: number;
+                /** @description Case-insensitive text search across the listed columns, applied before paging. */
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -459,6 +497,10 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Present while more rows remain: `<url>; rel="next"` */
+                    Link?: string;
+                    /** @description Rows matching the filters, across all pages */
+                    "X-Total-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -501,6 +543,12 @@ export interface operations {
             query?: {
                 /** @description ADIF version, e.g. 3.1.7. Defaults to the lab's current version. */
                 adif_version?: string | null;
+                /** @description Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour). */
+                limit?: number | null;
+                /** @description Rows to skip, for the page after `limit` rows. */
+                offset?: number;
+                /** @description Case-insensitive text search across the listed columns, applied before paging. */
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -511,6 +559,10 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Present while more rows remain: `<url>; rel="next"` */
+                    Link?: string;
+                    /** @description Rows matching the filters, across all pages */
+                    "X-Total-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -533,6 +585,12 @@ export interface operations {
             query?: {
                 /** @description ADIF version, e.g. 3.1.7. Defaults to the lab's current version. */
                 adif_version?: string | null;
+                /** @description Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour). */
+                limit?: number | null;
+                /** @description Rows to skip, for the page after `limit` rows. */
+                offset?: number;
+                /** @description Case-insensitive text search across the listed columns, applied before paging. */
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -543,6 +601,10 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Present while more rows remain: `<url>; rel="next"` */
+                    Link?: string;
+                    /** @description Rows matching the filters, across all pages */
+                    "X-Total-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -597,6 +659,12 @@ export interface operations {
             query?: {
                 /** @description ADIF version, e.g. 3.1.7. Defaults to the lab's current version. */
                 adif_version?: string | null;
+                /** @description Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour). */
+                limit?: number | null;
+                /** @description Rows to skip, for the page after `limit` rows. */
+                offset?: number;
+                /** @description Case-insensitive text search across the listed columns, applied before paging. */
+                q?: string | null;
             };
             header?: never;
             path: {
@@ -609,6 +677,10 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Present while more rows remain: `<url>; rel="next"` */
+                    Link?: string;
+                    /** @description Rows matching the filters, across all pages */
+                    "X-Total-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -631,6 +703,12 @@ export interface operations {
             query?: {
                 /** @description ADIF version, e.g. 3.1.7. Defaults to the lab's current version. */
                 adif_version?: string | null;
+                /** @description Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour). */
+                limit?: number | null;
+                /** @description Rows to skip, for the page after `limit` rows. */
+                offset?: number;
+                /** @description Case-insensitive text search across the listed columns, applied before paging. */
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -641,6 +719,10 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Present while more rows remain: `<url>; rel="next"` */
+                    Link?: string;
+                    /** @description Rows matching the filters, across all pages */
+                    "X-Total-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -663,6 +745,12 @@ export interface operations {
             query?: {
                 /** @description ADIF version, e.g. 3.1.7. Defaults to the lab's current version. */
                 adif_version?: string | null;
+                /** @description Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour). */
+                limit?: number | null;
+                /** @description Rows to skip, for the page after `limit` rows. */
+                offset?: number;
+                /** @description Case-insensitive text search across the listed columns, applied before paging. */
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -673,6 +761,10 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Present while more rows remain: `<url>; rel="next"` */
+                    Link?: string;
+                    /** @description Rows matching the filters, across all pages */
+                    "X-Total-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {
