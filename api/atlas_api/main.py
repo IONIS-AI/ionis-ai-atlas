@@ -18,7 +18,7 @@ from psycopg_pool import ConnectionPool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .models import (Band, Contest, Current, DataType, DxccEntity, Enumeration, EnumerationSummary, Field,
-                     Health, Mode, Release, Version)
+                     Health, Mode, Release, Version, ColumnValue)
 
 API = "/api/v1"
 # The release, built into the image by publish.sh (Containerfile ARG -> ENV). Image LABELS carry it
@@ -140,7 +140,8 @@ def _contains(q: str) -> str:
 
 def paged(request: Request, response: Response, base: str | sql.Composable, args: tuple, columns: list[str],
           order: list[str], limit: Optional[int], offset: int, q: Optional[str],
-          where: Optional[dict[str, str]] = None) -> tuple[list[dict], int]:
+          where: Optional[dict[str, str]] = None,
+          extra: Optional[list[tuple[sql.Composable, list]]] = None) -> tuple[list[dict], int]:
     """Run `base` (a SELECT without ORDER BY) as a subquery; search `columns` for `q`, apply exact
     `where` filters, count, order by `order` (unique, so pages never overlap) and page. Column names
     here come from code or from information_schema, never from a request, and are quoted anyway."""
@@ -153,6 +154,9 @@ def paged(request: Request, response: Response, base: str | sql.Composable, args
     for col, val in (where or {}).items():
         conds.append(sql.SQL("t.{}::text = %s").format(sql.Identifier(col)))
         params.append(val)
+    for cond, vals in extra or []:           # composed from code, values bound as parameters
+        conds.append(cond)
+        params += vals
     filt = sql.SQL(" WHERE ") + sql.SQL(" AND ").join(conds) if conds else sql.SQL("")
     total = rows(sql.SQL("SELECT count(*) AS n FROM ({}) t").format(base) + filt, tuple(params))[0]["n"]
     page = (sql.SQL("SELECT * FROM ({}) t").format(base) + filt + sql.SQL(" ORDER BY ")
@@ -232,15 +236,21 @@ def pick(table: str, cols: list[tuple[str, str]], alias: Optional[str] = None) -
 # additive), and each names its canonical route: /adif/enumerations/<table> (SPEC R16).
 @app.get(f"{API}/adif/bands", response_model=list[Band], tags=["adif"], responses=PAGED)
 def bands(request: Request, response: Response, adif_version: Optional[str] = VersionParam,
-          limit: Optional[int] = LimitParam, offset: int = OffsetParam, q: Optional[str] = SearchParam) -> list[dict]:
+          limit: Optional[int] = LimitParam, offset: int = OffsetParam, q: Optional[str] = SearchParam,
+          freq_mhz: Optional[float] = Query(None, ge=0, le=1e7,
+                                            description="Only the band containing this frequency in MHz (lower ≤ f ≤ upper), "
+                                                        "e.g. 14.074 → 20m.")) -> list[dict]:
     """ADIF's Band enumeration: name and frequency range in MHz, in frequency order.
     Curated view of `/adif/enumerations/band`."""
     v = version_or_current(adif_version)
+    contains = [(sql.SQL("t.lower_freq_mhz <= %s AND %s <= t.upper_freq_mhz"), [freq_mhz, freq_mhz])] \
+        if freq_mhz is not None else None
     data, _ = paged(request, response,
                     sql.SQL("SELECT {} FROM adif.band WHERE adif_version = %s").format(pick("band", [
                         ("band", "''"), ("lower_freq_mhz", "NULL::numeric"), ("upper_freq_mhz", "NULL::numeric"),
                         ("import_only", FLAG)])), (v,),
-                    ["band", "lower_freq_mhz", "upper_freq_mhz"], ["lower_freq_mhz", "band"], limit, offset, q)
+                    ["band", "lower_freq_mhz", "upper_freq_mhz"], ["lower_freq_mhz", "band"], limit, offset, q,
+                    extra=contains)
     return data
 
 
@@ -286,14 +296,17 @@ def contests(request: Request, response: Response, adif_version: Optional[str] =
 
 @app.get(f"{API}/adif/fields", response_model=list[Field], tags=["adif"], responses=PAGED)
 def fields(request: Request, response: Response, adif_version: Optional[str] = VersionParam,
-           limit: Optional[int] = LimitParam, offset: int = OffsetParam, q: Optional[str] = SearchParam) -> list[dict]:
+           limit: Optional[int] = LimitParam, offset: int = OffsetParam, q: Optional[str] = SearchParam,
+           data_type: Optional[str] = Query(None, min_length=1, max_length=100,
+                                            description="Only fields of this ADIF data type, exactly, e.g. Enumeration.")) -> list[dict]:
     """ADIF's fields (`fields.json`): the vocabulary every IONIS-AI column is defined against."""
     v = version_or_current(adif_version)
     data, _ = paged(request, response,
                     sql.SQL("SELECT {} FROM adif.field WHERE adif_version = %s").format(pick("field", [
                         ("field_name", "''"), ("data_type", "''"), ("enumeration", "NULL::text"),
                         ("description", "NULL::text"), ("import_only", FLAG)])), (v,),
-                    ["field_name", "data_type", "enumeration", "description"], ["field_name"], limit, offset, q)
+                    ["field_name", "data_type", "enumeration", "description"], ["field_name"], limit, offset, q,
+                    {"data_type": data_type} if data_type else None)
     return data
 
 
@@ -348,6 +361,22 @@ def enumerations(adif_version: Optional[str] = VersionParam) -> list[dict]:
 _RESERVED = {"adif_version", "limit", "offset", "q"}
 
 
+def resolve_enumeration(name: str) -> tuple[str, str, list[dict]]:
+    """(table, ADIF name, columns) for an enumeration named by its table (canonical, R16) or by
+    ADIF's own spelling, in any case. Only tables that exist can match; anything else is 404."""
+    tables = enumeration_tables()
+    by_table = {t: n for n, t in tables.items()}
+    key = name.lower()
+    table = key if key in by_table else next((t for n, t in tables.items() if n.lower() == key), None)
+    if table is None:
+        raise HTTPException(404, f"No ADIF enumeration named {name!r}")
+    cols = rows(
+        "SELECT column_name AS name, data_type AS type FROM information_schema.columns "
+        "WHERE table_schema = 'adif' AND table_name = %s AND column_name NOT IN ('adif_version', 'record') "
+        "ORDER BY ordinal_position", (table,))
+    return table, by_table[table], cols
+
+
 @app.get(f"{API}/adif/enumerations/{{name}}", response_model=Enumeration, tags=["adif"], responses=PAGED)
 def enumeration(name: str, request: Request, response: Response, adif_version: Optional[str] = VersionParam,
                 limit: Optional[int] = LimitParam, offset: int = OffsetParam, q: Optional[str] = SearchParam) -> dict:
@@ -360,29 +389,48 @@ def enumeration(name: str, request: Request, response: Response, adif_version: O
     by name, e.g. `?dxcc_entity_code=15&deleted=false`. A filter naming a column the enumeration
     does not have is refused (400) rather than ignored."""
     v = version_or_current(adif_version)
-    tables = enumeration_tables()
-    by_table = {t: n for n, t in tables.items()}
-    key = name.lower()
-    table = key if key in by_table else next((t for n, t in tables.items() if n.lower() == key), None)
-    if table is None:
-        raise HTTPException(404, f"No ADIF enumeration named {name!r}")
-    cols = rows(
-        "SELECT column_name AS name, data_type AS type FROM information_schema.columns "
-        "WHERE table_schema = 'adif' AND table_name = %s AND column_name NOT IN ('adif_version', 'record') "
-        "ORDER BY ordinal_position", (table,))
+    table, adif_name, cols = resolve_enumeration(name)
     names = [c["name"] for c in cols]
-    where = {}
+    booleans = {c["name"] for c in cols if c["type"] == "boolean"}
+    where, flags = {}, []
     for k, val in request.query_params.multi_items():
         if k in _RESERVED:
             continue
         if k not in names:
-            raise HTTPException(400, f"{by_table[table]} has no column {k!r}; filterable: {', '.join(names)}")
-        where[k] = val
+            raise HTTPException(400, f"{adif_name} has no column {k!r}; filterable: {', '.join(names)}")
+        if k in booleans:
+            # ADIF leaves a flag EMPTY where it doesn't apply, so most rows hold NULL, not false: an
+            # exact match on false would find almost nothing. Empty reads as false, as the curated views
+            # already read it.
+            flags.append((sql.SQL("coalesce(t.{}, false)::text = %s").format(sql.Identifier(k)), [val.lower()]))
+        else:
+            where[k] = val
     base = sql.SQL("SELECT {} FROM adif.{} WHERE adif_version = %s").format(
         sql.SQL(", ").join(sql.Identifier(c) for c in names), sql.Identifier(table))
-    data, total = paged(request, response, base, (v,), names, ["record_key"], limit, offset, q, where)
-    return {"name": by_table[table], "table": table, "file": source_file(table), "adif_version": v,
+    data, total = paged(request, response, base, (v,), names, ["record_key"], limit, offset, q, where, flags)
+    return {"name": adif_name, "table": table, "file": source_file(table), "adif_version": v,
             "columns": cols, "rows": data, "total": total, "limit": limit, "offset": offset}
+
+
+@app.get(f"{API}/adif/enumerations/{{name}}/values/{{column}}", response_model=list[ColumnValue], tags=["adif"],
+         responses=PAGED)
+def enumeration_values(name: str, column: str, request: Request, response: Response,
+                       adif_version: Optional[str] = VersionParam, limit: Optional[int] = LimitParam,
+                       offset: int = OffsetParam, q: Optional[str] = SearchParam) -> list[dict]:
+    """The distinct values of one column of an enumeration, each with how many records carry it:
+    e.g. which DXCC entities have primary subdivisions, and how many each. What a client needs to
+    offer a filter on that column (`/adif/enumerations/<table>?<column>=<value>`). A column the
+    enumeration does not have is 404. Values are text, ordered as the column orders them."""
+    v = version_or_current(adif_version)
+    table, adif_name, cols = resolve_enumeration(name)
+    if column not in {c["name"] for c in cols} - {"record_key"}:
+        raise HTTPException(404, f"{adif_name} has no column {column!r}")
+    # Sorted by the column itself (it is the GROUP BY key, one row per value), so numbers sort as
+    # numbers. Not min(): PostgreSQL has no min() for booleans.
+    base = sql.SQL("SELECT {c}::text AS value, count(*)::int AS count, {c} AS sort FROM adif.{t} "
+                   "WHERE adif_version = %s GROUP BY {c}").format(c=sql.Identifier(column), t=sql.Identifier(table))
+    data, _ = paged(request, response, base, (v,), ["value"], ["sort"], limit, offset, q)
+    return [{"value": r["value"], "count": r["count"]} for r in data]
 
 
 # --- Swagger UI, self-hosted -------------------------------------------------------------------

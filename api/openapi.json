@@ -61,6 +61,31 @@
         "title": "Column",
         "type": "object"
       },
+      "ColumnValue": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ],
+        "title": "ColumnValue",
+        "type": "object"
+      },
       "Contest": {
         "properties": {
           "contest_id": {
@@ -593,6 +618,26 @@
               ],
               "description": "Case-insensitive text search across the listed columns, applied before paging.",
               "title": "Q"
+            }
+          },
+          {
+            "description": "Only the band containing this frequency in MHz (lower \u2264 f \u2264 upper), e.g. 14.074 \u2192 20m.",
+            "in": "query",
+            "name": "freq_mhz",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 10000000.0,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only the band containing this frequency in MHz (lower \u2264 f \u2264 upper), e.g. 14.074 \u2192 20m.",
+              "title": "Freq Mhz"
             }
           }
         ],
@@ -1217,6 +1262,147 @@
         ]
       }
     },
+    "/api/v1/adif/enumerations/{name}/values/{column}": {
+      "get": {
+        "description": "The distinct values of one column of an enumeration, each with how many records carry it:\ne.g. which DXCC entities have primary subdivisions, and how many each. What a client needs to\noffer a filter on that column (`/adif/enumerations/<table>?<column>=<value>`). A column the\nenumeration does not have is 404. Values are text, ordered as the column orders them.",
+        "operationId": "enumeration_values_api_v1_adif_enumerations__name__values__column__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "column",
+            "required": true,
+            "schema": {
+              "title": "Column",
+              "type": "string"
+            }
+          },
+          {
+            "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+            "in": "query",
+            "name": "adif_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
+              "title": "Adif Version"
+            }
+          },
+          {
+            "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Rows to skip, for the page after `limit` rows.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip, for the page after `limit` rows.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Case-insensitive text search across the listed columns, applied before paging.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive text search across the listed columns, applied before paging.",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ColumnValue"
+                  },
+                  "title": "Response Enumeration Values Api V1 Adif Enumerations  Name  Values  Column  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "Link": {
+                "description": "Present while more rows remain: `<url>; rel=\"next\"`",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Total-Count": {
+                "description": "Rows matching the filters, across all pages",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enumeration Values",
+        "tags": [
+          "adif"
+        ]
+      }
+    },
     "/api/v1/adif/fields": {
       "get": {
         "description": "ADIF's fields (`fields.json`): the vocabulary every IONIS-AI column is defined against.",
@@ -1291,6 +1477,26 @@
               ],
               "description": "Case-insensitive text search across the listed columns, applied before paging.",
               "title": "Q"
+            }
+          },
+          {
+            "description": "Only fields of this ADIF data type, exactly, e.g. Enumeration.",
+            "in": "query",
+            "name": "data_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only fields of this ADIF data type, exactly, e.g. Enumeration.",
+              "title": "Data Type"
             }
           }
         ],

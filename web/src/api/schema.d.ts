@@ -154,6 +154,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/adif/enumerations/{name}/values/{column}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Enumeration Values
+         * @description The distinct values of one column of an enumeration, each with how many records carry it:
+         *     e.g. which DXCC entities have primary subdivisions, and how many each. What a client needs to
+         *     offer a filter on that column (`/adif/enumerations/<table>?<column>=<value>`). A column the
+         *     enumeration does not have is 404. Values are text, ordered as the column orders them.
+         */
+        get: operations["enumeration_values_api_v1_adif_enumerations__name__values__column__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/adif/fields": {
         parameters: {
             query?: never;
@@ -274,6 +297,13 @@ export interface components {
             name: string;
             /** Type */
             type: string;
+        };
+        /** ColumnValue */
+        ColumnValue: {
+            /** Count */
+            count: number;
+            /** Value */
+            value: string | null;
         };
         /** Contest */
         Contest: {
@@ -445,6 +475,8 @@ export interface operations {
                 offset?: number;
                 /** @description Case-insensitive text search across the listed columns, applied before paging. */
                 q?: string | null;
+                /** @description Only the band containing this frequency in MHz (lower ≤ f ≤ upper), e.g. 14.074 → 20m. */
+                freq_mhz?: number | null;
             };
             header?: never;
             path?: never;
@@ -698,6 +730,51 @@ export interface operations {
             };
         };
     };
+    enumeration_values_api_v1_adif_enumerations__name__values__column__get: {
+        parameters: {
+            query?: {
+                /** @description ADIF version, e.g. 3.1.7. Defaults to the lab's current version. */
+                adif_version?: string | null;
+                /** @description Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour). */
+                limit?: number | null;
+                /** @description Rows to skip, for the page after `limit` rows. */
+                offset?: number;
+                /** @description Case-insensitive text search across the listed columns, applied before paging. */
+                q?: string | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+                column: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Present while more rows remain: `<url>; rel="next"` */
+                    Link?: string;
+                    /** @description Rows matching the filters, across all pages */
+                    "X-Total-Count"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ColumnValue"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     fields_api_v1_adif_fields_get: {
         parameters: {
             query?: {
@@ -709,6 +786,8 @@ export interface operations {
                 offset?: number;
                 /** @description Case-insensitive text search across the listed columns, applied before paging. */
                 q?: string | null;
+                /** @description Only fields of this ADIF data type, exactly, e.g. Enumeration. */
+                data_type?: string | null;
             };
             header?: never;
             path?: never;

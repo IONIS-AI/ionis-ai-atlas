@@ -81,6 +81,13 @@ h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: -0.015em; }
 .controls .count { margin: 0; }
 .controls .size { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-3); margin-left: auto; }
 .controls .size select { padding: 4px 6px; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: -2px 0 12px; font-size: 13px;
+  color: var(--ink-3); }
+.filters label { display: flex; align-items: center; gap: 6px; }
+.filters select, .filters input { padding: 4px 6px; font-size: 13px; }
+.filters input[type="number"] { width: 150px; }
+.filters .clear { font: inherit; font-size: 13px; color: var(--accent); background: none; border: 0; padding: 4px 0;
+  cursor: pointer; text-decoration: underline; }
 .tablewrap.loading { opacity: 0.55; transition: opacity 120ms; }
 .pager { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 14px 0 0; font-size: 13px;
   color: var(--ink-2); font-variant-numeric: tabular-nums; }

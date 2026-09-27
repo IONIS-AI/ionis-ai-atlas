@@ -84,6 +84,11 @@ class EnumerationSummary(BaseModel):
     import_only_records: int
 
 
+class ColumnValue(BaseModel):
+    value: Optional[str]  # as text; null where records leave the column empty
+    count: int            # records carrying it
+
+
 class Column(BaseModel):
     name: str
     type: str
