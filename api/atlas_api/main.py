@@ -48,7 +48,8 @@ app = FastAPI(
     version=VERSION,
     description=(
         "Read-only access to the published IONIS-AI collection. Every field is defined by "
-        "ADIF 3.1.7 or by the IONIS-AI extension (ionis-core docs/IONIS-DATA-SPEC.md). "
+        "ADIF (the loaded versions are listed at /api/v1/adif/releases, the current one at "
+        "/api/v1/adif/current) or by the IONIS-AI extension (ionis-core docs/IONIS-DATA-SPEC.md). "
         "This description is a published contract: /api/v1 changes are additive only."
     ),
     lifespan=lifespan,
@@ -200,6 +201,33 @@ def current() -> dict:
     return got[0]
 
 
+# --- Curated views degrade, never break (SPEC R17) ----------------------------------------------
+# A curated view names ADIF columns. A later ADIF version that drops one must not turn the view into
+# a 500: the column is looked up in the database (per request, since the engine can upgrade its schema
+# while this service runs) and a dropped one selects a fallback the response model still accepts.
+# The columns ADIF adds appear in the generic /adif/enumerations/<table> view without any change here.
+def present(table: str) -> set[str]:
+    return {r["column_name"] for r in rows(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'adif' AND table_name = %s", (table,))}
+
+
+FLAG = "false"   # a flag ADIF leaves empty (import_only, deleted) reads false, present or not
+
+
+def pick(table: str, cols: list[tuple[str, str]], alias: Optional[str] = None) -> sql.Composable:
+    """A SELECT list: each (column, fallback SQL) as the column if the table has it, else the
+    fallback, always named as the column. A FLAG column is coalesced to false either way, since
+    ADIF leaves it empty on most rows and the response models require a boolean."""
+    have = present(table)
+    ref = (lambda c: sql.SQL("{}.{}").format(sql.Identifier(alias), sql.Identifier(c))) if alias else sql.Identifier
+
+    def expr(c: str, fallback: str) -> sql.Composable:
+        if c not in have:
+            return sql.SQL(fallback)
+        return sql.SQL("coalesce({}, false)").format(ref(c)) if fallback == FLAG else ref(c)
+    return sql.SQL(", ").join(sql.SQL("{} AS {}").format(expr(c, f), sql.Identifier(c)) for c, f in cols)
+
+
 # The four routes below are curated views published before R16. They stay (the contract is
 # additive), and each names its canonical route: /adif/enumerations/<table> (SPEC R16).
 @app.get(f"{API}/adif/bands", response_model=list[Band], tags=["adif"], responses=PAGED)
@@ -209,9 +237,10 @@ def bands(request: Request, response: Response, adif_version: Optional[str] = Ve
     Curated view of `/adif/enumerations/band`."""
     v = version_or_current(adif_version)
     data, _ = paged(request, response,
-                    "SELECT band, lower_freq_mhz, upper_freq_mhz, coalesce(import_only, false) AS import_only "
-                    "FROM adif.band WHERE adif_version = %s", (v,),
-                    ["band", "lower_freq_mhz", "upper_freq_mhz"], ["lower_freq_mhz"], limit, offset, q)
+                    sql.SQL("SELECT {} FROM adif.band WHERE adif_version = %s").format(pick("band", [
+                        ("band", "''"), ("lower_freq_mhz", "NULL::numeric"), ("upper_freq_mhz", "NULL::numeric"),
+                        ("import_only", FLAG)])), (v,),
+                    ["band", "lower_freq_mhz", "upper_freq_mhz"], ["lower_freq_mhz", "band"], limit, offset, q)
     return data
 
 
@@ -222,10 +251,10 @@ def modes(request: Request, response: Response, adif_version: Optional[str] = Ve
     too, so `q=ft4` finds MFSK. Curated view of `/adif/enumerations/mode`."""
     v = version_or_current(adif_version)
     data, _ = paged(request, response,
-                    "SELECT m.mode, m.description, coalesce(m.import_only, false) AS import_only, "
-                    "coalesce(array_agg(s.submode ORDER BY s.submode) FILTER (WHERE s.submode IS NOT NULL), '{}') AS submodes "
-                    "FROM adif.mode m LEFT JOIN adif.submode s ON s.adif_version = m.adif_version AND s.mode = m.mode "
-                    "WHERE m.adif_version = %s GROUP BY m.mode, m.description, m.import_only", (v,),
+                    sql.SQL("SELECT *, coalesce((SELECT array_agg(s.submode ORDER BY s.submode) FROM adif.submode s "
+                            "WHERE s.adif_version = %s AND s.mode = m.mode), '{{}}') AS submodes "
+                            "FROM (SELECT {} FROM adif.mode m WHERE m.adif_version = %s) m").format(pick("mode", [
+                        ("mode", "''"), ("description", "NULL::text"), ("import_only", FLAG)], alias="m")), (v, v),
                     ["mode", "description", "submodes"], ["mode"], limit, offset, q)
     return data
 
@@ -237,8 +266,8 @@ def dxcc(request: Request, response: Response, adif_version: Optional[str] = Ver
     Curated view of `/adif/enumerations/dxcc_entity_code`."""
     v = version_or_current(adif_version)
     data, _ = paged(request, response,
-                    "SELECT entity_code, entity_name, coalesce(deleted, false) AS deleted "
-                    "FROM adif.dxcc_entity_code WHERE adif_version = %s", (v,),
+                    sql.SQL("SELECT {} FROM adif.dxcc_entity_code WHERE adif_version = %s").format(pick("dxcc_entity_code", [
+                        ("entity_code", "NULL::integer"), ("entity_name", "''"), ("deleted", FLAG)])), (v,),
                     ["entity_code", "entity_name"], ["entity_code"], limit, offset, q)
     return data
 
@@ -249,8 +278,8 @@ def contests(request: Request, response: Response, adif_version: Optional[str] =
     """ADIF's Contest_ID enumeration. Curated view of `/adif/enumerations/contest_id`."""
     v = version_or_current(adif_version)
     data, _ = paged(request, response,
-                    "SELECT contest_id, description, coalesce(import_only, false) AS import_only "
-                    "FROM adif.contest_id WHERE adif_version = %s", (v,),
+                    sql.SQL("SELECT {} FROM adif.contest_id WHERE adif_version = %s").format(pick("contest_id", [
+                        ("contest_id", "''"), ("description", "NULL::text"), ("import_only", FLAG)])), (v,),
                     ["contest_id", "description"], ["contest_id"], limit, offset, q)
     return data
 
@@ -261,8 +290,9 @@ def fields(request: Request, response: Response, adif_version: Optional[str] = V
     """ADIF's fields (`fields.json`): the vocabulary every IONIS-AI column is defined against."""
     v = version_or_current(adif_version)
     data, _ = paged(request, response,
-                    "SELECT field_name, data_type, enumeration, description, "
-                    "coalesce(import_only, false) AS import_only FROM adif.field WHERE adif_version = %s", (v,),
+                    sql.SQL("SELECT {} FROM adif.field WHERE adif_version = %s").format(pick("field", [
+                        ("field_name", "''"), ("data_type", "''"), ("enumeration", "NULL::text"),
+                        ("description", "NULL::text"), ("import_only", FLAG)])), (v,),
                     ["field_name", "data_type", "enumeration", "description"], ["field_name"], limit, offset, q)
     return data
 
@@ -273,8 +303,9 @@ def datatypes(request: Request, response: Response, adif_version: Optional[str] 
     """ADIF's data types (`datatypes.json`: GridSquare, Date, Number, ...)."""
     v = version_or_current(adif_version)
     data, _ = paged(request, response,
-                    "SELECT data_type_name, data_type_indicator, description, minimum_value, maximum_value, "
-                    "coalesce(import_only, false) AS import_only FROM adif.datatype WHERE adif_version = %s", (v,),
+                    sql.SQL("SELECT {} FROM adif.datatype WHERE adif_version = %s").format(pick("datatype", [
+                        ("data_type_name", "''"), ("data_type_indicator", "NULL::text"), ("description", "NULL::text"),
+                        ("minimum_value", "NULL::text"), ("maximum_value", "NULL::text"), ("import_only", FLAG)])), (v,),
                     ["data_type_name", "data_type_indicator", "description"], ["data_type_name"], limit, offset, q)
     return data
 

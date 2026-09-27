@@ -11,39 +11,16 @@ The zip is read from ADIF, verified against the pin the database image was built
 (db/load/adif_upstream_sha256.json), and cached (ATLAS_ADIF_CACHE, default ~/.cache). A zip that
 does not match the pin FAILS; only an unreachable adif.org with nothing cached skips.
 """
-import hashlib
-import json
 import os
 import re
-import urllib.request
-import zipfile
-from pathlib import Path
 
 import pytest
 
+from adif_files import PINS, engine_current, resource_zip
 from atlas_api.adif_records import REJECTED, WARNING, Reference, check, parse_adi
 
 DB = os.environ.get("ATLAS_DB_URL")
 pytestmark = pytest.mark.skipif(not DB, reason="ATLAS_DB_URL not set: needs a running Atlas database image")
-
-ROOT = Path(__file__).resolve().parents[2]
-PINS = json.loads((ROOT / "db/load/adif_upstream_sha256.json").read_text())
-CACHE = Path(os.environ.get("ATLAS_ADIF_CACHE", Path.home() / ".cache/ionis-ai-atlas/adif"))
-
-
-def resource_zip(version: str) -> zipfile.ZipFile:
-    pin = PINS["versions"][version.replace(".", "")]
-    path = CACHE / f"{version.replace('.', '')}.zip"
-    if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != pin["zip_sha256"]:
-        try:
-            raw = urllib.request.urlopen(pin["source"], timeout=60).read()
-        except OSError as e:
-            pytest.skip(f"ADIF {version} zip not cached and adif.org unreachable: {e}")
-        got = hashlib.sha256(raw).hexdigest()
-        assert got == pin["zip_sha256"], f"{pin['source']}: SHA-256 {got} is not the pinned {pin['zip_sha256']}"
-        CACHE.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(raw)
-    return zipfile.ZipFile(path)
 
 
 def test_file(version: str, ext: str) -> str:
@@ -116,8 +93,13 @@ def adi(fields: dict, header: str = "") -> str:
     return (f"built for a test {header}<EOH>" if header else "") + body
 
 
+# The rules are checked against whichever version the engine serves (SPEC R17); every value below is
+# valid, or invalid, in 3.1.6 and 3.1.7 alike.
+NOW = engine_current()
+
+
 def findings_for(ref, fields, header=""):
-    return [(f.field, f.severity) for f in check(ref("3.1.7"), parse_adi(adi(fields, header)))]
+    return [(f.field, f.severity) for f in check(ref(NOW), parse_adi(adi(fields, header)))]
 
 
 @pytest.mark.parametrize("fields,expect", [
@@ -162,6 +144,6 @@ def test_a_userdef_range_from_the_header(ref, value, expect):
 
 
 def test_a_deleted_value_is_a_warning_not_a_rejection(ref):
-    e = ref("3.1.7").enums["dxcc_entity_code"]
+    e = ref(NOW).enums["dxcc_entity_code"]
     deleted = next(code for code, rows in e.index.items() if all(r["deleted"] for r in rows))
     assert findings_for(ref, {"DXCC": deleted}) == [("DXCC", WARNING)]

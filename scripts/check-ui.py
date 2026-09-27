@@ -3,17 +3,35 @@
 Covers SPEC R15 (lists paged and searched on the server) and R16 (names from the spec): the page
 counts, the pager, search that runs before paging and says what it left out, page size, a stale
 page number coming back to the last page, links from before R16 redirecting, curated views paging
-too, and a sidebar that only navigates. Counts are ADIF 3.1.7's.
+too, and a sidebar that only navigates.
+
+Version-agnostic (SPEC R17): no count is written here. The page must show what the API says, so the
+expected totals are read from the API first; the API's own numbers are checked against ADIF's
+published files by the API tests.
 
     make check-ui BASE=http://localhost:8080     (the stack must be up: make dev or make up)
 """
 import asyncio
+import json
 import sys
+import urllib.request
 
 from playwright.async_api import async_playwright
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8080"
 fails, notes = [], []
+
+
+def api(path: str):
+    with urllib.request.urlopen(f"{BASE}/api/v1{path}", timeout=30) as r:
+        return json.load(r), r.headers
+
+
+n = lambda x: f"{x:,}"
+TOTALS = {e["table"]: e["records"] for e in api("/adif/enumerations")[0]}
+PAS, SAS = TOTALS["primary_administrative_subdivision"], TOTALS["secondary_administrative_subdivision"]
+FIELDS = int(api("/adif/fields?limit=1")[1]["X-Total-Count"])
+OBLAST = api("/adif/enumerations/primary_administrative_subdivision?q=oblast&limit=1")[0]["total"]
 
 
 def check(ok, what):
@@ -38,10 +56,10 @@ async def main():
         await pg.goto(f"{BASE}/adif/enumerations/primary_administrative_subdivision")
         await settle()
         c = await count()
-        check(c.startswith("1–100 of 1,965"), f"PAS first page count: {c!r}")
-        check(await rows() == 100, f"PAS renders 100 rows, not 1,965 ({await rows()})")
+        check(c.startswith(f"1–100 of {n(PAS)}"), f"PAS first page count: {c!r}")
+        check(await rows() == 100, f"PAS renders 100 rows, not {n(PAS)} ({await rows()})")
         pager = await pg.locator(".pager span").inner_text()
-        check(pager == "Page 1 of 20", f"pager: {pager!r}")
+        check(pager == f"Page 1 of {-(-PAS // 100)}", f"pager: {pager!r}")
         src = await pg.locator(".source").inner_text()
         check("Primary_Administrative_Subdivision" in src and "enumerations_primary_administrative_subdivision.json" in src
               and "GET /api/v1/adif/enumerations/primary_administrative_subdivision" in src, f"R16 source line: {src!r}")
@@ -52,14 +70,15 @@ async def main():
         await pg.get_by_label("Next page").click()
         await settle()
         c = await count()
-        check(c.startswith("101–200 of 1,965") and "page=2" in pg.url, f"page 2: {c!r} url={pg.url}")
+        check(c.startswith(f"101–200 of {n(PAS)}") and "page=2" in pg.url, f"page 2: {c!r} url={pg.url}")
 
         # 3. Search, server-side, back to page 1, says what it left out
         await pg.get_by_label("Search Primary Administrative Subdivision").fill("oblast")
         await pg.wait_for_timeout(700)
         await settle()
         c = await count()
-        check(c.startswith("1–82 of 82 matching “oblast”") and "1,965 in all" in c and await rows() == 82
+        check(OBLAST > 0 and c.startswith(f"1–{OBLAST} of {OBLAST} matching “oblast”") and f"{n(PAS)} in all" in c
+              and await rows() == OBLAST
               and "page=" not in pg.url and "q=oblast" in pg.url,
               f"search: {c!r} url={pg.url}")
 
@@ -76,31 +95,32 @@ async def main():
         await pg.locator(".controls .size select").select_option("25")
         await settle()
         c = await count()
-        check(c.startswith("1–25 of 1,965") and await rows() == 25 and "size=25" in pg.url, f"size 25: {c!r}")
-        check((await pg.locator(".pager span").inner_text()) == "Page 1 of 79", "79 pages at 25 rows")
+        check(c.startswith(f"1–25 of {n(PAS)}") and await rows() == 25 and "size=25" in pg.url, f"size 25: {c!r}")
+        check((await pg.locator(".pager span").inner_text()) == f"Page 1 of {-(-PAS // 25)}", "page count at 25 rows")
 
         # 6. A page past the end (e.g. from a stale link) comes back to the last page
         await pg.goto(f"{BASE}/adif/enumerations/secondary_administrative_subdivision?page=9")
         await settle()
         await pg.wait_for_timeout(500)
         c = await count()
-        check(c.startswith("1–58 of 58") and "page=" not in pg.url, f"page past end clamps: {c!r} url={pg.url}")
+        check(c.startswith(f"1–{SAS} of {SAS}") and "page=" not in pg.url, f"page past end clamps: {c!r} url={pg.url}")
 
         # 7. A link from before R16 still works
         await pg.goto(f"{BASE}/adif/secondary_administrative_subdivision")
         await settle()
         check(pg.url.endswith("/adif/enumerations/secondary_administrative_subdivision")
-              and (await count()).startswith("1–58 of 58"), f"legacy link redirected: {pg.url}")
+              and (await count()).startswith(f"1–{SAS} of {SAS}"), f"legacy link redirected: {pg.url}")
 
         # 8. Curated views page and search on the server too
         await pg.goto(f"{BASE}/adif/enumerations/mode?q=ft4")
         await settle()
         first = await pg.locator("tbody tr td strong").first.inner_text()
         check(first == "MFSK" and (await count()).startswith("1–1 of 1"), "mode search by submode finds MFSK")
-        await pg.goto(f"{BASE}/adif/fields?size=50&page=4")
+        last = -(-FIELDS // 50)
+        await pg.goto(f"{BASE}/adif/fields?size=50&page={last}")
         await settle()
         c = await count()
-        check(c.startswith("151–186 of 186"), f"fields page 4 of 50: {c!r}")
+        check(c.startswith(f"{n((last - 1) * 50 + 1)}–{n(FIELDS)} of {n(FIELDS)}"), f"fields last page at 50: {c!r}")
 
         # 9. The sidebar navigates by canonical route and carries only the ADIF version
         await pg.goto(f"{BASE}/adif/enumerations/band?v=3.1.6&q=20m")

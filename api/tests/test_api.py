@@ -10,6 +10,8 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+from adif_files import engine_current, published, records
+
 DB = os.environ.get("ATLAS_DB_URL")
 pytestmark = pytest.mark.skipif(not DB, reason="ATLAS_DB_URL not set: needs a running Atlas database image")
 
@@ -22,22 +24,34 @@ def client():
         yield c
 
 
-# ADIF 3.1.7's own counts, from ADIF's published all.json.
-@pytest.mark.parametrize("path,count", [
-    ("/api/v1/adif/bands", 33), ("/api/v1/adif/modes", 91), ("/api/v1/adif/dxcc", 403),
-    ("/api/v1/adif/contests", 256), ("/api/v1/adif/fields", 186),
-])
-def test_current_version_counts(client, path, count):
+# SPEC R17: the same tests hold for whichever ADIF version the engine carries. No count and no version
+# is written here; each comes from ADIF's own all.json for the version under test (adif_files.py).
+NOW = engine_current()
+COUNTED = [("/api/v1/adif/bands", "Band"), ("/api/v1/adif/modes", "Mode"),
+           ("/api/v1/adif/dxcc", "DXCC_Entity_Code"), ("/api/v1/adif/contests", "Contest_ID")]
+
+
+@pytest.mark.parametrize("path,enumeration", COUNTED)
+def test_current_version_counts(client, path, enumeration):
     r = client.get(path)
-    assert r.status_code == 200 and len(r.json()) == count
+    assert r.status_code == 200 and len(r.json()) == records(NOW, enumeration)
 
 
-def test_current_is_317(client):
-    assert client.get("/api/v1/adif/current").json()["adif_version"] == "3.1.7"
+def test_fields_and_datatypes_count_as_published(client):
+    adif = published(NOW)
+    assert len(client.get("/api/v1/adif/fields").json()) == len(adif["Fields"]["Records"])
+    assert len(client.get("/api/v1/adif/datatypes").json()) == len(adif["DataTypes"]["Records"])
 
 
-def test_versions_coexist(client):
-    assert len(client.get("/api/v1/adif/modes", params={"adif_version": "3.1.6"}).json()) == 90
+def test_current_is_the_engines_configured_version(client):
+    assert client.get("/api/v1/adif/current").json()["adif_version"] == NOW
+
+
+def test_every_loaded_version_serves_its_own_counts(client):
+    """Versions coexist: each answers with its own published numbers, not the current one's."""
+    for rel in client.get("/api/v1/adif/releases").json():
+        v = rel["adif_version"]
+        assert len(client.get("/api/v1/adif/modes", params={"adif_version": v}).json()) == records(v, "Mode"), v
 
 
 def test_unknown_version_is_404(client):
@@ -71,9 +85,11 @@ def test_the_api_role_cannot_write():
             conn.execute("INSERT INTO adif.release VALUES ('x','x',NULL,NULL,'x','x')")
 
 
-def test_all_25_enumerations_are_listed_with_adif_total(client):
+def test_every_published_enumeration_is_listed_with_adifs_total(client):
     e = client.get("/api/v1/adif/enumerations").json()
-    assert len(e) == 25 and sum(x["records"] for x in e) == 3345
+    published_enums = published(NOW)["Enumerations"]
+    assert {x["name"] for x in e} == set(published_enums)
+    assert sum(x["records"] for x in e) == sum(len(p["Records"]) for p in published_enums.values())
     assert "Country" not in {x["name"] for x in e}
 
 
@@ -89,19 +105,16 @@ def test_unknown_or_hostile_enumeration_name_is_404(client):
         assert client.get(f"/api/v1/adif/enumerations/{bad}").status_code == 404, bad
 
 
-def test_datatypes(client):
-    assert len(client.get("/api/v1/adif/datatypes").json()) == 28
-
-
 # --- R15: lists paged and filtered on the server ----------------------------------------------
 PAS = "/api/v1/adif/enumerations/primary_administrative_subdivision"
+PAS_N = records(NOW, "Primary_Administrative_Subdivision")
 
 
 def test_a_page_says_how_many_rows_there_are_in_all(client):
     r = client.get(PAS, params={"limit": 100})
     body = r.json()
-    assert len(body["rows"]) == 100 and body["total"] == 1965 and body["limit"] == 100 and body["offset"] == 0
-    assert r.headers["X-Total-Count"] == "1965"
+    assert len(body["rows"]) == 100 and body["total"] == PAS_N and body["limit"] == 100 and body["offset"] == 0
+    assert r.headers["X-Total-Count"] == str(PAS_N)
     assert 'rel="next"' in r.headers["Link"] and "offset=100" in r.headers["Link"]
 
 
@@ -115,14 +128,15 @@ def test_walking_the_pages_returns_every_row_once(client):
         if "Link" not in page.headers:
             break
         offset += 300
-    assert len(walked) == len(whole) == 1965
+    assert len(walked) == len(whole) == PAS_N
     assert walked == whole
-    assert len({r["record_key"] for r in walked}) == 1965
+    assert len({r["record_key"] for r in walked}) == PAS_N
 
 
 def test_the_last_page_has_no_next_link(client):
-    r = client.get(PAS, params={"limit": 100, "offset": 1900})
-    assert len(r.json()["rows"]) == 65 and "Link" not in r.headers
+    last = (PAS_N - 1) // 100 * 100
+    r = client.get(PAS, params={"limit": 100, "offset": last})
+    assert len(r.json()["rows"]) == PAS_N - last and "Link" not in r.headers
 
 
 def test_search_runs_before_paging_so_the_total_is_of_matches(client):
@@ -156,19 +170,22 @@ def test_limit_is_capped(client):
     assert client.get(PAS, params={"limit": 0}).status_code == 422
 
 
-@pytest.mark.parametrize("path,count", [
-    ("/api/v1/adif/bands", 33), ("/api/v1/adif/modes", 91), ("/api/v1/adif/dxcc", 403),
-    ("/api/v1/adif/contests", 256), ("/api/v1/adif/fields", 186), ("/api/v1/adif/datatypes", 28),
+@pytest.mark.parametrize("path,count", [(p, lambda e=e: records(NOW, e)) for p, e in COUNTED] + [
+    ("/api/v1/adif/fields", lambda: len(published(NOW)["Fields"]["Records"])),
+    ("/api/v1/adif/datatypes", lambda: len(published(NOW)["DataTypes"]["Records"])),
 ])
 def test_without_limit_arrays_return_everything_as_before(client, path, count):
     """The contract is additive: a pre-R15 caller gets the whole list, and now a count header too."""
+    count = count()
     r = client.get(path)
     assert len(r.json()) == count and r.headers["X-Total-Count"] == str(count) and "Link" not in r.headers
 
 
 def test_array_endpoints_page_too(client):
-    r = client.get("/api/v1/adif/fields", params={"limit": 50, "offset": 150})
-    assert len(r.json()) == 36 and r.headers["X-Total-Count"] == "186" and "Link" not in r.headers
+    n = len(published(NOW)["Fields"]["Records"])
+    offset = n - 36                                     # the short last page
+    r = client.get("/api/v1/adif/fields", params={"limit": 50, "offset": offset})
+    assert len(r.json()) == 36 and r.headers["X-Total-Count"] == str(n) and "Link" not in r.headers
 
 
 # --- R16: one name per thing, from the spec ----------------------------------------------------
@@ -177,7 +194,7 @@ def test_the_canonical_route_is_the_table_name_and_names_its_file(client):
     assert r["name"] == "Secondary_Administrative_Subdivision"
     assert r["table"] == "secondary_administrative_subdivision"
     assert r["file"] == "enumerations_secondary_administrative_subdivision.json"
-    assert r["total"] == 58
+    assert r["total"] == records(NOW, "Secondary_Administrative_Subdivision")
 
 
 @pytest.mark.parametrize("spelling", ["Secondary_Administrative_Subdivision", "SECONDARY_ADMINISTRATIVE_SUBDIVISION",
@@ -189,3 +206,53 @@ def test_adifs_own_spelling_is_accepted_in_any_case(client, spelling):
 def test_the_summary_lists_route_segment_and_file_for_every_enumeration(client):
     for e in client.get("/api/v1/adif/enumerations").json():
         assert e["file"] == f"enumerations_{e['table']}.json" and e["table"] == e["name"].lower()
+
+
+# --- R17: curated views degrade, never break ---------------------------------------------------
+@pytest.fixture
+def dropped(monkeypatch):
+    """Pretend a later ADIF version dropped columns from a table: present() stops reporting them."""
+    import atlas_api.main as m
+    real = m.present
+
+    def drop(table, *cols):
+        monkeypatch.setattr(m, "present", lambda t: real(t) - (set(cols) if t == table else set()))
+    return drop
+
+
+def test_bands_survive_losing_their_frequencies(client, dropped):
+    dropped("band", "lower_freq_mhz", "upper_freq_mhz")
+    whole = client.get("/api/v1/adif/bands")
+    assert whole.status_code == 200 and len(whole.json()) == records(NOW, "Band")
+    assert all(b["lower_freq_mhz"] is None and b["upper_freq_mhz"] is None for b in whole.json())
+    # With every frequency NULL the band name breaks the tie, so pages still neither overlap nor skip.
+    paged = client.get("/api/v1/adif/bands", params={"limit": 10}).json() + \
+        client.get("/api/v1/adif/bands", params={"limit": 10, "offset": 10}).json()
+    assert paged == whole.json()[:20]
+
+
+def test_dxcc_survives_losing_entity_names(client, dropped):
+    dropped("dxcc_entity_code", "entity_name")
+    r = client.get("/api/v1/adif/dxcc")
+    assert r.status_code == 200 and {e["entity_name"] for e in r.json()} == {""}
+
+
+def test_modes_survive_losing_descriptions_and_keep_submodes(client, dropped):
+    dropped("mode", "description")
+    r = client.get("/api/v1/adif/modes")
+    mfsk = next(m for m in r.json() if m["mode"] == "MFSK")
+    assert r.status_code == 200 and mfsk["description"] is None and "FT4" in mfsk["submodes"]
+
+
+@pytest.mark.parametrize("path,table", [("/api/v1/adif/contests", "contest_id"), ("/api/v1/adif/fields", "field"),
+                                        ("/api/v1/adif/datatypes", "datatype")])
+def test_a_dropped_flag_reads_false(client, dropped, path, table):
+    dropped(table, "import_only")
+    r = client.get(path)
+    assert r.status_code == 200 and {x["import_only"] for x in r.json()} == {False}
+
+
+def test_flags_that_are_present_still_read_true_where_adif_sets_them(client):
+    """The coalesce must not flatten real values: ADIF marks some bands import-only."""
+    assert any(b["import_only"] for b in client.get("/api/v1/adif/bands").json()) or \
+        any(c["import_only"] for c in client.get("/api/v1/adif/contests").json())
