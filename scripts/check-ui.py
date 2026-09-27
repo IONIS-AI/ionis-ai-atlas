@@ -92,7 +92,7 @@ async def main():
         await pg.wait_for_timeout(700)
         await settle()
         st = await pg.locator("p.state").inner_text()
-        check("matches “zzzznothing”" in st, f"no-match message: {st!r}")
+        check("matching “zzzznothing”" in st, f"no-match message: {st!r}")
 
         # 5. Page size
         await pg.goto(f"{BASE}/adif/enumerations/primary_administrative_subdivision")
@@ -251,6 +251,50 @@ async def main():
         await pp.wait_for_timeout(200)
         check("nav-collapsed" in (await pp.locator(".shell").get_attribute("class")), "and narrowed again: it collapses")
         await phone.close()
+
+        # 14. Per-view filters (#38), each checked against what the API says it should find
+        await pg.goto(f"{BASE}/adif/enumerations/band")
+        await settle()
+        await pg.get_by_label("Band containing this frequency (MHz)").fill("14.074")
+        for _ in range(40):
+            if await rows() == 1:
+                break
+            await pg.wait_for_timeout(150)
+        band = await pg.locator("tbody tr td strong").first.inner_text()
+        check(band == "20m" and await rows() == 1 and "f.freq_mhz=14.074" in pg.url
+              and "containing 14.074 MHz" in await count(), f"14.074 MHz finds 20m: {band!r}, {await count()!r}")
+
+        pas_vals = api("/adif/enumerations/primary_administrative_subdivision/values/dxcc_entity_code")[0]
+        biggest = max(pas_vals, key=lambda v: v["count"])
+        await pg.goto(f"{BASE}/adif/enumerations/primary_administrative_subdivision")
+        await settle()
+        await pg.get_by_label("DXCC entity").select_option(biggest["value"])
+        await settle()
+        c = await count()
+        check(c.startswith(f"1–{min(100, biggest['count'])} of {n(biggest['count'])}") and "entity" in c
+              and f"f.dxcc_entity_code={biggest['value']}" in pg.url and f"{n(PAS)} in all" in c,
+              f"entity filter: {c!r}")
+        filters_in_content = await pg.locator(".content .filters").count() == 1 and await pg.locator(".sidebar .filters").count() == 0
+        check(filters_in_content, "filters sit in the content region, not the sidebar")
+        await pg.get_by_role("button", name="Clear filters").click()
+        await settle()
+        check((await count()).startswith(f"1–100 of {n(PAS)}") and "f." not in pg.url, "Clear filters restores the full list")
+
+        deleted = api("/adif/enumerations/dxcc_entity_code?deleted=true&limit=1")[0]["total"]
+        await pg.goto(f"{BASE}/adif/enumerations/dxcc_entity_code")
+        await settle()
+        await pg.get_by_label("deleted", exact=True).select_option("true")
+        await settle()
+        c = await count()
+        check(c.startswith(f"1–{min(100, deleted)} of {n(deleted)}") and "deleted" in c, f"deleted: yes finds {deleted}: {c!r}")
+
+        enums = int(api("/adif/fields?data_type=Enumeration&limit=1")[1]["X-Total-Count"])
+        await pg.goto(f"{BASE}/adif/fields")
+        await settle()
+        await pg.get_by_label("Data type").select_option("Enumeration")
+        await settle()
+        c = await count()
+        check(c.startswith(f"1–{min(100, enums)} of {n(enums)}") and "of type Enumeration" in c, f"fields by type: {c!r}")
 
         # 15. A failing API is shown as unavailable, never as a zero count (#51). Its own context: the
         #     browser logs the 500s it is made to see, which are not errors of the page.

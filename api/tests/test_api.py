@@ -260,3 +260,54 @@ def test_flags_that_are_present_still_read_true_where_adif_sets_them(client):
     """The coalesce must not flatten real values: ADIF marks some bands import-only."""
     assert any(b["import_only"] for b in client.get("/api/v1/adif/bands").json()) or \
         any(c["import_only"] for c in client.get("/api/v1/adif/contests").json())
+
+
+# --- #38: the filters each view offers --------------------------------------------------------
+def test_which_band_contains_a_frequency(client):
+    r = client.get("/api/v1/adif/bands", params={"freq_mhz": 14.074})
+    assert [b["band"] for b in r.json()] == ["20m"] and r.headers["X-Total-Count"] == "1"
+    edge = client.get("/api/v1/adif/bands", params={"freq_mhz": 14.35}).json()        # bounds are inclusive
+    assert [b["band"] for b in edge] == ["20m"]
+    assert client.get("/api/v1/adif/bands", params={"freq_mhz": 0.001}).json() == []  # below every band
+
+
+def test_fields_by_data_type(client):
+    want = sum(1 for f in published(NOW)["Fields"]["Records"].values() if f.get("Data Type") == "Enumeration")
+    r = client.get("/api/v1/adif/fields", params={"data_type": "Enumeration", "limit": 1000})
+    assert want > 0 and len(r.json()) == want and {f["data_type"] for f in r.json()} == {"Enumeration"}
+
+
+def test_the_distinct_values_of_a_column_add_up_to_the_table(client):
+    vals = client.get(f"{PAS}/values/dxcc_entity_code").json()
+    recs = published(NOW)["Enumerations"]["Primary_Administrative_Subdivision"]["Records"].values()
+    assert sum(v["count"] for v in vals) == PAS_N
+    assert {v["value"] for v in vals} == {r["DXCC Entity Code"] for r in recs}
+    first = vals[0]
+    assert client.get(PAS, params={"dxcc_entity_code": first["value"]}).json()["total"] == first["count"]
+
+
+def test_distinct_values_of_a_flag_include_empty(client):
+    vals = {v["value"]: v["count"] for v in client.get("/api/v1/adif/enumerations/dxcc_entity_code/values/deleted").json()}
+    assert sum(vals.values()) == records(NOW, "DXCC_Entity_Code") and "true" in vals
+
+
+@pytest.mark.parametrize("column", ["no_such_column", "record_key", "adif_version", "record"])
+def test_distinct_values_of_an_unknown_column_is_404(client, column):
+    assert client.get(f"{PAS}/values/{column}").status_code == 404
+
+
+def test_a_flag_filter_reads_an_empty_flag_as_false(client):
+    """ADIF leaves `Deleted` empty on live entities; "not deleted" must find them, not nothing."""
+    recs = published(NOW)["Enumerations"]["DXCC_Entity_Code"]["Records"].values()
+    deleted = sum(1 for r in recs if r.get("Deleted") == "true")
+    d = "/api/v1/adif/enumerations/dxcc_entity_code"
+    assert client.get(d, params={"deleted": "true"}).json()["total"] == deleted > 0
+    assert client.get(d, params={"deleted": "false"}).json()["total"] == len(recs) - deleted
+    assert client.get(d, params={"deleted": "FALSE"}).json()["total"] == len(recs) - deleted
+
+
+@pytest.mark.parametrize("value", ["1", "0", "yes", "maybe", ""])
+def test_a_flag_filter_refuses_anything_but_true_or_false(client, value):
+    """A flag has two values; `?deleted=yes` must not come back as an empty page that reads as none."""
+    r = client.get("/api/v1/adif/enumerations/dxcc_entity_code", params={"deleted": value})
+    assert r.status_code == 400 and "true or false" in r.json()["detail"]
