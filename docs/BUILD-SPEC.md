@@ -429,7 +429,10 @@ endpoint makes a client download one.
   matching the filters), `limit` and the position of the next page. Reference data (ADIF, the
   `ionis` dimensions: thousands of rows) uses `offset`. Collection data (millions to billions)
   uses a **keyset cursor** on the primary key, because `OFFSET` scans every skipped row. `limit`
-  defaults to 100 and is capped at 1,000.
+  defaults to 100 and is capped at 1,000. An endpoint that returns an **object** carries `total`,
+  `limit` and `offset` in it. One that returns a **bare JSON array** (the pre-R15 list endpoints)
+  can't grow a field without breaking its shape, so every list endpoint also sends the count in
+  headers: `X-Total-Count`, and `Link: <…>; rel="next"` while more rows remain.
 - **Filtering and search run in the API**, before the page is cut (`q` for text search, plus
   per-view filters as query parameters). A filter applied in the browser sees only the current
   page, so it silently misses matches: the moment pagination exists, client-side filtering is
