@@ -119,7 +119,7 @@ async def main():
         # 8. Curated views page and search on the server too
         await pg.goto(f"{BASE}/adif/enumerations/mode?q=ft4")
         await settle()
-        first = await pg.locator("tbody tr td strong").first.inner_text()
+        band = await pg.locator("tbody tr td strong").first.inner_text()
         check(first == "MFSK" and (await count()).startswith("1–1 of 1"), "mode search by submode finds MFSK")
         last = -(-FIELDS // 50)
         await pg.goto(f"{BASE}/adif/fields?size=50&page={last}")
@@ -260,9 +260,9 @@ async def main():
             if await rows() == 1:
                 break
             await pg.wait_for_timeout(150)
-        first = await pg.locator("tbody tr td strong").first.inner_text()
-        check(first == "20m" and await rows() == 1 and "f.freq_mhz=14.074" in pg.url
-              and "containing 14.074 MHz" in await count(), f"14.074 MHz finds 20m: {first!r}, {await count()!r}")
+        band = await pg.locator("tbody tr td strong").first.inner_text()
+        check(band == "20m" and await rows() == 1 and "f.freq_mhz=14.074" in pg.url
+              and "containing 14.074 MHz" in await count(), f"14.074 MHz finds 20m: {band!r}, {await count()!r}")
 
         pas_vals = api("/adif/enumerations/primary_administrative_subdivision/values/dxcc_entity_code")[0]
         biggest = max(pas_vals, key=lambda v: v["count"])
