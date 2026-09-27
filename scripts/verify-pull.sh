@@ -28,7 +28,8 @@ if [ "$CHANNEL" = prod ]; then
   DB="docker.io/$NAMESPACE/ionis-ai-atlas-db:$SHA"
 else
   . scripts/registry-lib.sh
-  APP="docker.io/$NAMESPACE/ionis-ai-atlas-dev:app-$SHA"   # dev: one private repository, kind in the tag
+  . scripts/sign-lib.sh         # verify_signed
+APP="docker.io/$NAMESPACE/ionis-ai-atlas-dev:app-$SHA"   # dev: one private repository, kind in the tag
   DB="docker.io/$NAMESPACE/ionis-ai-atlas-dev:db-$SHA"
 fi
 URL=http://127.0.0.1:8080
@@ -51,6 +52,14 @@ $ENGINE rmi -f "$APP" "$DB" >/dev/null 2>&1 || true
 $ENGINE pull -q "$APP" >/dev/null
 $ENGINE pull -q "$DB" >/dev/null
 echo "  pulled from docker.io, no local copies used$([ "$CHANNEL" = prod ] && echo ', anonymously')"
+
+# Signature first: an image that is not ours should not be run, let alone tested. Releases verify
+# --offline against the bundled transparency-log entry, so a Sigstore outage cannot fail a good
+# release; dev images carry no log entry by design.
+KEYDIR="$(cd "$(dirname "$0")/../keys" && pwd)"
+if [ "${CHANNEL:-dev}" = prod ]; then PUB="$KEYDIR/ki7mt-images.pub"; else PUB="$KEYDIR/ki7mt-images-dev.pub"; fi
+check "app image is signed by ki7mt"         'verify_signed "${CHANNEL:-dev}" "$PUB" "$APP"'
+check "db image is signed by ki7mt"          'verify_signed "${CHANNEL:-dev}" "$PUB" "$DB"'
 if ! out="$("${COMPOSE[@]}" up -d 2>&1)"; then   # say why, rather than exiting silently under set -e
   echo "verify-pull: compose up failed:"; grep -v '^\s*$' <<<"$out" | tail -5 | sed 's/^/    /'; exit 1
 fi

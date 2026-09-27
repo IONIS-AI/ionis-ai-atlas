@@ -80,6 +80,7 @@ esac
 
 ENGINE=docker
 . scripts/registry-lib.sh     # temporary registry login from Vault, hub(); defines NAMESPACE
+. scripts/sign-lib.sh         # cosign + Vault transit: sign_digest, verify_signed
 if [ "$DRYRUN" = 1 ]; then
   # Defined outright, not wrapped around the previous definition: wrapping it recurses.
   ref_for() { echo "$DRYRUN_REPO $1-${VERSION:-$SHA}"; }
@@ -147,18 +148,52 @@ for kind in "${KINDS[@]}"; do
   scan_local "$kind" "$ctx"
 done
 
+# Push to a STAGING tag, sign the index digest, and only then create the tags people pull.
+#
+# Signing must follow the push -- cosign signs a digest that exists in a registry. But the RELEASE
+# tag does not have to exist unsigned first, and on a public repository it must not: it would be
+# pullable-and-unsigned in the gap, and a signing failure would leave a published release to
+# retract. Cosign signatures are digest-scoped, not tag-scoped, so a tag created afterwards from
+# the same digest is signed from the instant it exists.
+#
+# A failure before the final step therefore leaves only a staging tag to clean up, and no
+# user-facing tag was ever created.
 for kind in "${KINDS[@]}"; do
   read -r repo tag <<<"$(ref_for "$kind")"
+  staging="_staging-$tag"
   ref="docker.io/$NAMESPACE/$repo:$tag"
+  stage_ref="docker.io/$NAMESPACE/$repo:$staging"
   if [ "$kind" = db ]; then ctx=db; else ctx=.; fi
-  # prod also moves :latest, so compose.yaml can default to it and never name a version.
-  latest=(); [ "$CHANNEL" = prod ] && latest=(-t "docker.io/$NAMESPACE/$repo:latest")
+
+  drop_staging() { hub -o /dev/null -X DELETE \
+    "https://hub.docker.com/v2/namespaces/$NAMESPACE/repositories/$repo/tags/$staging" >/dev/null 2>&1 || true; }
+
   docker buildx build --builder "$BUILDER" --platform "$PLATFORMS" --pull --push \
     --sbom=true --provenance=mode=max \
     --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
     --label "org.opencontainers.image.version=${VERSION:-$SHA}" \
-    -t "$ref" "${latest[@]}" -f "$ctx/Containerfile" "$ctx"
-  echo "publish: pushed $ref ($PLATFORMS)"
+    -t "$stage_ref" -f "$ctx/Containerfile" "$ctx"
+
+  digest="$(docker buildx imagetools inspect "$stage_ref" --format '{{.Manifest.Digest}}')"
+  [ -n "$digest" ] || { drop_staging; die "could not read the index digest of $stage_ref"; }
+
+  # One signature on the multi-arch index covers both architectures, and the SBOM and provenance
+  # with them: the index lists those manifests by digest, so altering one changes the index digest
+  # and breaks this signature.
+  # A DRY RUN MUST NOT MINT A RELEASE SIGNATURE. make release-dryrun runs with CHANNEL=prod so the
+  # real path is exercised, but signing with the release key would produce an artefact
+  # indistinguishable from a genuine release, and upload its digest to the public, permanent,
+  # append-only transparency log. A rehearsal signs with the dev key and never uploads.
+  sign_channel="$CHANNEL"; [ "$DRYRUN" = 1 ] && sign_channel=dev
+  sign_digest "$sign_channel" "docker.io/$NAMESPACE/$repo@$digest" \
+    || { drop_staging; die "signing failed for $kind; nothing user-facing was created"; }
+
+  # prod also moves :latest, so compose.yaml can default to it and never name a version. Both tags
+  # are the same already-signed digest.
+  latest=(); [ "$CHANNEL" = prod ] && latest=(-t "docker.io/$NAMESPACE/$repo:latest")
+  docker buildx imagetools create -t "$ref" "${latest[@]}" "docker.io/$NAMESPACE/$repo@$digest" >/dev/null
+  drop_staging
+  echo "publish: pushed $ref ($PLATFORMS), signed"
 done
 if [ "$DRYRUN" = 1 ]; then
   # Delete the TAGS, not the repository. Repository deletion on Hub is asynchronous: the repo sits
