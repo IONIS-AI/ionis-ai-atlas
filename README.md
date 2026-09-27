@@ -8,8 +8,8 @@
 Explore the IONIS-AI propagation collection. React front end, FastAPI API, PostgreSQL with pgvector,
 shipped as Docker images on docker.io and run with `docker compose up`.
 
-Build specification: `fleet-ops/packaging/fleet-llm-bench/projects/atlas-web/SPEC.md`.
-Data specification: `ionis-core/docs/IONIS-DATA-SPEC.md`.
+Build specification: [docs/BUILD-SPEC.md](docs/BUILD-SPEC.md).
+Data specification: [IONIS-DATA-SPEC.md](https://github.com/IONIS-AI/ionis-core/blob/main/docs/IONIS-DATA-SPEC.md).
 
 ## Run it
 
