@@ -30,7 +30,10 @@ pool: Optional[ConnectionPool] = None
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global pool
-    pool = ConnectionPool(DB_URL, min_size=1, max_size=8, kwargs={"row_factory": dict_row}, open=True)
+    # check: test each connection before handing it out, so one killed by a database restart is
+    # replaced rather than surfacing as a 500 on the next request.
+    pool = ConnectionPool(DB_URL, min_size=1, max_size=8, kwargs={"row_factory": dict_row},
+                          check=ConnectionPool.check_connection, open=True)
     yield
     pool.close()
 
