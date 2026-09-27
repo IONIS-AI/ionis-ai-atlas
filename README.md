@@ -8,15 +8,16 @@ Data specification: `ionis-core/docs/IONIS-DATA-SPEC.md`.
 
 ## Run it
 
-There is no public release yet. From a clone, `make dev` builds and runs the current `main` (see
-"Run from a clone" below). Once released:
+You need Docker (or podman) and the `compose.yaml` file from a release. Nothing else: no account,
+no login, no clone.
 
 ```
+curl -O https://raw.githubusercontent.com/IONIS-AI/ionis-ai-atlas/v0.1.0/compose.yaml
 docker compose up          # or: podman compose up
 ```
-then open <http://localhost:8080>. The API's interactive documentation is at <http://localhost:8080/api/docs>.
+then open <http://localhost:8080>. To upgrade, fetch the new release's `compose.yaml` and run it again. The API's interactive documentation is at <http://localhost:8080/api/docs>.
 
-Images on docker.io, all under `ki7mt`, public: `ki7mt/ionis-ai-atlas` (the app),
+Images on docker.io, all under `ki7mt`, public, tagged by release version: `ki7mt/ionis-ai-atlas` (the app),
 `ki7mt/ionis-ai-atlas-db` (the engine) and one `ki7mt/ionis-ai-atlas-data-<dataset>` per dataset.
 Development builds go to one private repository, `ki7mt/ionis-ai-atlas-dev`, with the image kind in
 the tag (`app-<sha>`, `db-<sha>`).
@@ -50,11 +51,20 @@ make publish                     # on the M3: ionis-ai-atlas-dev:app-<sha> and d
 make verify-pull TAG=<sha>       # optional, before a release: pull from docker.io, prove it runs
 ```
 
+A **release** is the same command on a commit tagged `vX.Y.Z`, into the public repositories:
+
+```
+git tag v0.1.0 && git push origin v0.1.0            # the tag compose.yaml's version names
+CHANNEL=prod make publish                           # on the M3: ki7mt/ionis-ai-atlas:0.1.0, -db:0.1.0
+CHANNEL=prod make verify-pull TAG=0.1.0             # on the M3 and 9975: pulls with no login at all
+```
+
 Each image carries an SBOM and build provenance as registry attestations.
 
 The push credential comes from Vault (`secret/dockerhub/account/ki7mt`) into a temporary auth file that
 is deleted afterwards. Tags are never overwritten. A dev push to a repository that is not private is
-refused, and public (prod) pushes are refused until image signing is settled (#8).
+refused, as is a prod push to a repository that is not public. Image signing is planned (#8), not
+required.
 
 ## Build and test
 

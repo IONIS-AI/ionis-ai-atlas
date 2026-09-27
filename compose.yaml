@@ -1,15 +1,14 @@
 # IONIS-AI Atlas. `docker compose up`, then open http://localhost:8080
 # The two containers together are held to the target machine's budget: 4 CPUs and 8 GB (Atlas
 # SPEC.md, "Target machine"). The database port is not published outside this network.
-# Images are full references so the dev channel can use one repository with the kind in the tag.
-# There is no public release yet ("unreleased"); a release pins exact versions here. To run from a
-# clone today, use `make dev`.
+# Pinned to a public release; no login is needed to pull. Images are full references so the dev
+# channel (one private repository, kind in the tag) can override them.
 # Healthchecks live here, not only in the images: the published images are OCI format (needed for
 # their SBOM and provenance), and podman ignores HEALTHCHECK in OCI images. Here, every engine runs them.
 name: ionis-ai-atlas
 services:
   atlas:
-    image: ${ATLAS_APP_IMAGE:-docker.io/ki7mt/ionis-ai-atlas:unreleased}
+    image: ${ATLAS_APP_IMAGE:-docker.io/ki7mt/ionis-ai-atlas:0.1.0}
     ports: ["127.0.0.1:8080:8080"]
     environment:
       ATLAS_DB_URL: postgresql://atlas_ro:atlas@db:5432/ionis
@@ -27,7 +26,7 @@ services:
       timeout: 5s
       retries: 6
   db:
-    image: ${ATLAS_DB_IMAGE:-docker.io/ki7mt/ionis-ai-atlas-db:unreleased}
+    image: ${ATLAS_DB_IMAGE:-docker.io/ki7mt/ionis-ai-atlas-db:0.1.0}
     cpus: 3
     mem_limit: 7g
     shm_size: 1g
