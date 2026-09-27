@@ -222,6 +222,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Version
+         * @description Which release this service runs. What the image says about itself: proof that a deployment
+         *     runs a signed release is verifying the running image's digest (see SIGNING.md).
+         */
+        get: operations["version_api_v1_version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -370,6 +391,17 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * Version
+         * @description The release this service runs: version e.g. "0.1.2" and the git revision it was built from.
+         *     "dev" / "unknown" for anything not built by the publish script.
+         */
+        Version: {
+            /** Revision */
+            revision: string;
+            /** Version */
+            version: string;
         };
     };
     responses: never;
@@ -694,6 +726,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    version_api_v1_version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Version"];
                 };
             };
         };

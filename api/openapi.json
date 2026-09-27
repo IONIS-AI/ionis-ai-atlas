@@ -453,13 +453,32 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "Version": {
+        "description": "The release this service runs: version e.g. \"0.1.2\" and the git revision it was built from.\n\"dev\" / \"unknown\" for anything not built by the publish script.",
+        "properties": {
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "revision"
+        ],
+        "title": "Version",
+        "type": "object"
       }
     }
   },
   "info": {
     "description": "Read-only access to the published IONIS-AI collection. Every field is defined by ADIF 3.1.7 or by the IONIS-AI extension (ionis-core docs/IONIS-DATA-SPEC.md). This description is a published contract: /api/v1 changes are additive only.",
     "title": "IONIS-AI Atlas API",
-    "version": "1.0.0"
+    "version": "dev"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -980,6 +999,28 @@
           }
         },
         "summary": "Health",
+        "tags": [
+          "service"
+        ]
+      }
+    },
+    "/api/v1/version": {
+      "get": {
+        "description": "Which release this service runs. What the image says about itself: proof that a deployment\nruns a signed release is verifying the running image's digest (see SIGNING.md).",
+        "operationId": "version_api_v1_version_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Version"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Version",
         "tags": [
           "service"
         ]

@@ -13,6 +13,13 @@ class Health(BaseModel):
     status: str
 
 
+class Version(BaseModel):
+    """The release this service runs: version e.g. "0.1.2" and the git revision it was built from.
+    "dev" / "unknown" for anything not built by the publish script."""
+    version: str
+    revision: str
+
+
 class Release(BaseModel):
     adif_version: str
     status: str

@@ -33,6 +33,18 @@ RUN microdnf -y upgrade --refresh \
  && useradd -r -u 1001 -g 0 -d /app atlas
 ENV PATH=/opt/atlas/bin:$PATH
 COPY api/atlas_api ./atlas_api
+# The release and git revision, reported by /api/v1/version and the API description. publish.sh
+# passes both; a build without them reports "dev" / "unknown". Declared late so a new version only
+# rebuilds these last layers, not the dependency install above.
+#
+# The RUN is what makes the version reliable. podman/buildah reuse a cached `ENV X=$ARG` layer even
+# when the ARG changed, so a second local build kept reporting the FIRST build's version (measured:
+# two tags, one image ID, both "dev"). Every engine keys a RUN's cache on the ARGs it uses, so a new
+# version invalidates this layer and everything after it. It also leaves /app/RELEASE in the image.
+ARG ATLAS_VERSION=dev
+ARG ATLAS_REVISION=unknown
+RUN printf '%s %s\n' "$ATLAS_VERSION" "$ATLAS_REVISION" > /app/RELEASE
+ENV ATLAS_VERSION=$ATLAS_VERSION ATLAS_REVISION=$ATLAS_REVISION
 COPY --from=web /out/web ./static/web
 COPY --from=web /out/swagger ./static/swagger
 ENV ATLAS_STATIC=/app/static PYTHONUNBUFFERED=1
