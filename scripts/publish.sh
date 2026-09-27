@@ -8,6 +8,11 @@
 #
 #   scripts/publish.sh        (make publish)
 #
+# DRYRUN=1 runs the entire prod path against a throwaway repository
+# (ki7mt/atlas-release-test) instead of the real names, then deletes it. Nothing about the path is
+# stubbed: the same tag detection, visibility checks, buildx invocation and push all execute. Run it
+# before tagging, so a release is never the first execution of this code.
+#
 # Where images go (Judge, 2026-09-27; Docker Hub's free plan allows one private repository):
 #   CHANNEL=dev (default)  ONE private repository, the image kind in the tag:
 #                          ki7mt/ionis-ai-atlas-dev:<kind>-<sha>, kind = app | db
@@ -30,6 +35,8 @@ set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 
 CHANNEL="${CHANNEL:-dev}"
+DRYRUN="${DRYRUN:-0}"
+DRYRUN_REPO=atlas-release-test
 KINDS=(app db)                            # app = the React + FastAPI image, db = the engine
 PLATFORMS=linux/amd64,linux/arm64
 BUILDER=atlas-publish                     # a docker-container buildx builder: multi-platform output
@@ -45,12 +52,16 @@ case "$CHANNEL" in
         # POSIX BRE: \+ is a GNU extension. BSD sed (macOS) reads it as a literal '+', so this
         # matched nothing on the M3 -- the one machine designated to publish releases.
         VERSION="$(git tag --points-at HEAD | sed -n 's/^v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p' | head -1)"
+        # A dry run must work BEFORE the tag exists -- that is when you want it. It stands in a
+        # synthetic version and skips the published-tag checks; everything else runs unchanged.
+        if [ "$DRYRUN" = 1 ] && [ -z "$VERSION" ]; then VERSION=0.0.0-dryrun; fi
         [ -n "$VERSION" ] || die "CHANNEL=prod publishes a release: tag this commit vX.Y.Z first"
         # The tag must be the PUBLISHED one. Checking only the local tag lets a local-only or
         # locally-moved tag satisfy the guard, and the images then carry an
         # org.opencontainers.image.revision that the released tag does not point at -- provenance
         # nobody else can resolve. That happened on 0.1.0; this is the check that stops it.
         remote_commit="$(git ls-remote origin "refs/tags/v$VERSION^{}" | cut -f1)"
+        [ "$DRYRUN" = 1 ] && remote_commit="$(git rev-parse HEAD)"
         [ -n "$remote_commit" ] \
           || die "v$VERSION is not on origin: push the release tag before publishing"
         [ "$remote_commit" = "$(git rev-parse HEAD)" ] \
@@ -68,7 +79,12 @@ case "$(docker info --format '{{.OperatingSystem}}' 2>/dev/null)" in
 esac
 
 ENGINE=docker
-. scripts/registry-lib.sh     # temporary registry login from Vault, hub()
+. scripts/registry-lib.sh     # temporary registry login from Vault, hub(); defines NAMESPACE
+if [ "$DRYRUN" = 1 ]; then
+  # Defined outright, not wrapped around the previous definition: wrapping it recurses.
+  ref_for() { echo "$DRYRUN_REPO $1-${VERSION:-$SHA}"; }
+  echo "publish: DRYRUN — everything below runs for real against $NAMESPACE/$DRYRUN_REPO"
+fi
 
 ensure_repo() {           # $1 = repository name; created with $VISIBILITY if absent, refused if it differs
   local code priv want
@@ -104,14 +120,25 @@ for kind in "${KINDS[@]}"; do
   read -r repo tag <<<"$(ref_for "$kind")"
   ref="docker.io/$NAMESPACE/$repo:$tag"
   if [ "$kind" = db ]; then ctx=db; else ctx=.; fi
+  # prod also moves :latest, so compose.yaml can default to it and never name a version.
+  latest=(); [ "$CHANNEL" = prod ] && latest=(-t "docker.io/$NAMESPACE/$repo:latest")
   docker buildx build --builder "$BUILDER" --platform "$PLATFORMS" --pull --push \
     --sbom=true --provenance=mode=max \
     --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
     --label "org.opencontainers.image.version=${VERSION:-$SHA}" \
-    -t "$ref" -f "$ctx/Containerfile" "$ctx"
+    -t "$ref" "${latest[@]}" -f "$ctx/Containerfile" "$ctx"
   echo "publish: pushed $ref ($PLATFORMS)"
 done
-if [ "$CHANNEL" = prod ]; then
+if [ "$DRYRUN" = 1 ]; then
+  # Delete the TAGS, not the repository. Repository deletion on Hub is asynchronous: the repo sits
+  # in pending_delete, the registry then grants no scope on it, and the next dry run fails to push.
+  # Keeping one repository and clearing its tags makes the dry run repeatable back to back.
+  for kind in "${KINDS[@]}"; do
+    hub -o /dev/null -X DELETE \
+      "https://hub.docker.com/v2/namespaces/$NAMESPACE/repositories/$DRYRUN_REPO/tags/$kind-$VERSION" || true
+  done
+  echo "publish: DRYRUN passed; cleared the $NAMESPACE/$DRYRUN_REPO tags it pushed"
+elif [ "$CHANNEL" = prod ]; then
   echo "publish: released $VERSION. Check it anonymously, as a user would: CHANNEL=prod make verify-pull TAG=$VERSION"
 else
   echo "publish: done. Check it from a clean machine with: make verify-pull TAG=$SHA"

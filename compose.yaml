@@ -8,7 +8,7 @@
 name: ionis-ai-atlas
 services:
   atlas:
-    image: ${ATLAS_APP_IMAGE:-docker.io/ki7mt/ionis-ai-atlas:0.1.0}
+    image: ${ATLAS_APP_IMAGE:-docker.io/ki7mt/ionis-ai-atlas:latest}
     ports: ["127.0.0.1:8080:8080"]
     environment:
       ATLAS_DB_URL: postgresql://atlas_ro:atlas@db:5432/ionis
@@ -26,7 +26,7 @@ services:
       timeout: 5s
       retries: 6
   db:
-    image: ${ATLAS_DB_IMAGE:-docker.io/ki7mt/ionis-ai-atlas-db:0.1.0}
+    image: ${ATLAS_DB_IMAGE:-docker.io/ki7mt/ionis-ai-atlas-db:latest}
     cpus: 3
     mem_limit: 7g
     shm_size: 1g
