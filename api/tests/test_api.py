@@ -304,3 +304,10 @@ def test_a_flag_filter_reads_an_empty_flag_as_false(client):
     assert client.get(d, params={"deleted": "true"}).json()["total"] == deleted > 0
     assert client.get(d, params={"deleted": "false"}).json()["total"] == len(recs) - deleted
     assert client.get(d, params={"deleted": "FALSE"}).json()["total"] == len(recs) - deleted
+
+
+@pytest.mark.parametrize("value", ["1", "0", "yes", "maybe", ""])
+def test_a_flag_filter_refuses_anything_but_true_or_false(client, value):
+    """A flag has two values; `?deleted=yes` must not come back as an empty page that reads as none."""
+    r = client.get("/api/v1/adif/enumerations/dxcc_entity_code", params={"deleted": value})
+    assert r.status_code == 400 and "true or false" in r.json()["detail"]

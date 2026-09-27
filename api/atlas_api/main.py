@@ -387,7 +387,8 @@ def enumeration(name: str, request: Request, response: Response, adif_version: O
 
     Paged with `limit` / `offset`, searched with `q`, and **filtered exactly on any of its columns**
     by name, e.g. `?dxcc_entity_code=15&deleted=false`. A filter naming a column the enumeration
-    does not have is refused (400) rather than ignored."""
+    does not have is refused (400) rather than ignored, and so is a flag (`deleted`, `import_only`)
+    given anything but `true` or `false`. An empty flag reads as false."""
     v = version_or_current(adif_version)
     table, adif_name, cols = resolve_enumeration(name)
     names = [c["name"] for c in cols]
@@ -402,6 +403,10 @@ def enumeration(name: str, request: Request, response: Response, adif_version: O
             # ADIF leaves a flag EMPTY where it doesn't apply, so most rows hold NULL, not false: an
             # exact match on false would find almost nothing. Empty reads as false, as the curated views
             # already read it.
+            # A flag has two values; anything else is a question with no answer, refused rather than
+            # answered with an empty page that would read as "none".
+            if val.lower() not in ("true", "false"):
+                raise HTTPException(400, f"{k} is a flag: true or false (any case), not {val!r}")
             flags.append((sql.SQL("coalesce(t.{}, false)::text = %s").format(sql.Identifier(k)), [val.lower()]))
         else:
             where[k] = val
