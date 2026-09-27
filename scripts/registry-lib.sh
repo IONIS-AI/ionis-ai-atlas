@@ -4,8 +4,11 @@
 # provides hub() for Docker Hub's API. The token never reaches argv or a lasting config.
 NAMESPACE=ki7mt
 ACCOUNT=ki7mt
-if command -v podman >/dev/null; then ENGINE=podman; elif command -v docker >/dev/null; then ENGINE=docker
-else echo "registry: need podman or docker" >&2; exit 1; fi
+# ENGINE may be preset by the caller (publish.sh needs docker's buildx); otherwise podman if present.
+if [ -z "${ENGINE:-}" ]; then
+  if command -v podman >/dev/null; then ENGINE=podman; elif command -v docker >/dev/null; then ENGINE=docker
+  else echo "registry: need podman or docker" >&2; exit 1; fi
+fi
 
 REG_TMP="$(mktemp -d)"; chmod 700 "$REG_TMP"
 trap 'rm -rf "$REG_TMP"' EXIT
