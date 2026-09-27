@@ -6,13 +6,31 @@
 #
 #   COMPOSE_EXTRA=<file>   an extra compose file, e.g. to drop CPU caps where rootless podman
 #                          cannot enforce them (9975). Never needed on Docker Desktop.
+#   CHANNEL=prod           verify a public release (TAG=X.Y.Z) with NO login at all, exactly as a
+#                          user pulls it. dev (default) logs in, because the dev repository is private.
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
-SHA="${1:?usage: $0 <sha>   (the tag make publish printed)}"
-. scripts/registry-lib.sh
-
-APP="docker.io/$NAMESPACE/ionis-ai-atlas-dev:app-$SHA"   # dev: one private repository, kind in the tag
-DB="docker.io/$NAMESPACE/ionis-ai-atlas-dev:db-$SHA"
+SHA="${1:?usage: $0 <sha | X.Y.Z>   (what make publish printed)}"
+CHANNEL="${CHANNEL:-dev}"
+NAMESPACE=ki7mt
+if [ "$CHANNEL" = prod ]; then
+  # Anonymous on purpose: a release must install with no credential. An empty auth config replaces
+  # any login this machine may hold (Docker keeps its CLI plugins linked in, as registry-lib does).
+  if command -v podman >/dev/null; then ENGINE=podman; else ENGINE=docker; fi
+  REG_TMP="$(mktemp -d)"; chmod 700 "$REG_TMP"
+  if [ "$ENGINE" = podman ]; then
+    export REGISTRY_AUTH_FILE="$REG_TMP/auth.json"; echo '{}' > "$REGISTRY_AUTH_FILE"
+  else
+    export DOCKER_CONFIG="$REG_TMP"
+    if [ -d "$HOME/.docker/cli-plugins" ]; then ln -s "$HOME/.docker/cli-plugins" "$REG_TMP/cli-plugins"; fi
+  fi
+  APP="docker.io/$NAMESPACE/ionis-ai-atlas:$SHA"
+  DB="docker.io/$NAMESPACE/ionis-ai-atlas-db:$SHA"
+else
+  . scripts/registry-lib.sh
+  APP="docker.io/$NAMESPACE/ionis-ai-atlas-dev:app-$SHA"   # dev: one private repository, kind in the tag
+  DB="docker.io/$NAMESPACE/ionis-ai-atlas-dev:db-$SHA"
+fi
 URL=http://127.0.0.1:8080
 PROJECT=atlas-verify
 if [ "$ENGINE" = podman ]; then COMPOSE=(podman compose); else COMPOSE=(docker compose); fi
@@ -29,8 +47,10 @@ trap teardown EXIT
 
 echo "verify-pull: $SHA"
 $ENGINE rmi -f "$APP" "$DB" >/dev/null 2>&1 || true
-$ENGINE pull -q "$APP" >/dev/null && $ENGINE pull -q "$DB" >/dev/null
-echo "  pulled from docker.io, no local copies used"
+# One command per line: a failure inside an `a && b` chain does not stop the script under set -e.
+$ENGINE pull -q "$APP" >/dev/null
+$ENGINE pull -q "$DB" >/dev/null
+echo "  pulled from docker.io, no local copies used$([ "$CHANNEL" = prod ] && echo ', anonymously')"
 if ! out="$("${COMPOSE[@]}" up -d 2>&1)"; then   # say why, rather than exiting silently under set -e
   echo "verify-pull: compose up failed:"; grep -v '^\s*$' <<<"$out" | tail -5 | sed 's/^/    /'; exit 1
 fi

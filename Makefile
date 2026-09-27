@@ -5,7 +5,8 @@
 #   make dev         Docker (Desktop): build both images from this checkout and run them; after a
 #                    `git pull`, `make dev` again picks up the changes. `make dev-down` stops it.
 #   make publish     on the M3 (Docker Desktop): build amd64 + arm64 and push
-#                    ki7mt/ionis-ai-atlas-dev:<kind>-<sha> (one private repository; kind = app | db)
+#                    ki7mt/ionis-ai-atlas-dev:<kind>-<sha> (one private repository; kind = app | db).
+#                    CHANNEL=prod make publish on a commit tagged vX.Y.Z: public ki7mt/ionis-ai-atlas:X.Y.Z
 #   make verify-pull TAG=<sha>   pull from docker.io and prove the published compose file runs
 #   make check-browser  render both pages in headless Chromium and fail on anything the CSP blocks
 #                    (needs the stack up: `make dev` or `make up` first)
