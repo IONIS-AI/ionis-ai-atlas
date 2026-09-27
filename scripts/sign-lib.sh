@@ -36,11 +36,18 @@ vault_token_fresh() {
   local addr body
   addr="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['vault_addr'].rstrip('/'))" "$approle")"
   body="$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({'role_id':d['role_id'],'secret_id':d['secret_id']}))" "$approle")"
-  curl -fsS --cacert "$CA_CERT" -X POST -d "$body" "$addr/v1/auth/approle/login" \
+  # -d @- reads the body from STDIN. Passing it as -d "$body" put the AppRole secret_id on curl's
+  # argv, where any local process could read it with ps for the life of the request.
+  printf '%s' "$body" \
+    | curl -fsS --cacert "$CA_CERT" -X POST -d @- "$addr/v1/auth/approle/login" \
     | python3 -c 'import json,sys;print(json.load(sys.stdin)["auth"]["client_token"])' 
 }
 
 # cosign <args...> — the pinned container, with Vault reachable and the registry auth mounted.
+#
+# `-e VAULT_TOKEN` with no value passes the variable through from the environment. Writing
+# `-e VAULT_TOKEN="$VAULT_TOKEN"` put the token on docker's argv, readable with ps while signing.
+# It is exported by sign_digest for exactly that reason.
 #
 # VAULT_TOKEN is deliberately optional. Signing needs Vault; VERIFICATION DOES NOT -- it needs only
 # the public key and the registry. Referencing it unguarded made `set -u` abort verify-pull with an
@@ -50,7 +57,7 @@ cosign() {
   local addr
   addr="$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('${VAULT_APPROLE_FILE:-$HOME/.config/secrets/vault-approle.json}')))['vault_addr'])")"
   docker run --rm \
-    -e VAULT_ADDR="$addr" -e VAULT_TOKEN="${VAULT_TOKEN:-}" \
+    -e VAULT_ADDR="$addr" -e VAULT_TOKEN \
     -e SSL_CERT_FILE=/ca/root.crt -v "$CA_CERT:/ca/root.crt:ro" \
     -e DOCKER_CONFIG=/dc -v "$DOCKER_CONFIG:/dc:ro" \
     ${SIGN_EXTRA_MOUNT:+-v "$SIGN_EXTRA_MOUNT"} \
@@ -62,7 +69,7 @@ sign_digest() {
   local channel="$1" ref="$2" key tlog
   if [ "$channel" = prod ]; then key="$SIGN_KEY_PROD"; tlog=true; else key="$SIGN_KEY_DEV"; tlog=false; fi
   VAULT_TOKEN="$(vault_token_fresh)" || return 1
-  export VAULT_TOKEN
+  export VAULT_TOKEN          # exported, not passed as an argument: see cosign() above
   # cosign's own error is the whole diagnosis when signing fails; never swallow it.
   local rc=0
   cosign sign --key "hashivault://$key" --tlog-upload="$tlog" -y \
