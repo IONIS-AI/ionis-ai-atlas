@@ -34,6 +34,21 @@ make dev          # docker compose -f compose.yaml -f compose.dev.yaml up -d --b
 then open <http://localhost:8080>. Repeat both commands after each pull. `make dev-down` stops the stack.
 The development overlay runs the database without its volume, so every rebuild serves the new data.
 
+## Publish (maintainers)
+
+The dev release runs the same process prod will, into **private** `ki7mt/<image>-dev` repositories.
+Each architecture is built natively on its own machine, from a clean checkout of `main`:
+
+```
+make publish                     # on 9975 (amd64), then on the M3 (arm64): pushes <image>-dev:<sha>-<arch>
+make publish-manifest            # on either, once both are pushed: <image>-dev:<sha> for both architectures
+make verify-pull TAG=<sha>       # pull from docker.io and prove the published compose file runs
+```
+
+The push credential comes from Vault (`secret/dockerhub/account/ki7mt`) into a temporary auth file that
+is deleted afterwards. Tags are never overwritten. A dev push to a repository that is not private is
+refused, and public (prod) pushes are refused until image signing is settled (#8).
+
 ## Build and test
 
 ```
