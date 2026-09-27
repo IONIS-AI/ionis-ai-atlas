@@ -154,6 +154,38 @@ async def main():
         check(pg.url.endswith("/adif") and await pg.locator("h1").inner_text() == "ADIF Reference"
               and await rows() == 2 + len(TOTALS), f"ADIF landing lists data types, fields and {len(TOTALS)} enumerations")
 
+        # 11b. Switching version on the landing never shows the previous version's counts, not even
+        #      while the new ones load (#51): the new version's Fields request is held back, and the
+        #      count must read "…" meanwhile, then the new version's own number.
+        versions = [r["adif_version"] for r in api("/adif/releases")[0]]
+        if len(versions) > 1:
+            first, other = versions[-1], versions[0]
+            fields_n = lambda v: int(api(f"/adif/fields?adif_version={v}&limit=1")[1]["X-Total-Count"])
+            cell = pg.locator("tbody tr", has=pg.get_by_role("link", name="Fields", exact=True)).locator("td.num")
+            await pg.goto(f"{BASE}/adif?v={first}")
+            for _ in range(75):
+                if (await cell.inner_text()) == n(fields_n(first)):
+                    break
+                await pg.wait_for_timeout(200)
+            gate = asyncio.Event()
+            async def hold(route):
+                if f"adif_version={other}" in route.request.url:
+                    await gate.wait()
+                await route.continue_()
+            await pg.route("**/api/v1/adif/fields?*", hold)
+            await pg.locator(".sidebar select").select_option(other)
+            await pg.wait_for_timeout(400)
+            pending = await cell.inner_text()
+            gate.set()
+            for _ in range(75):
+                if (await cell.inner_text()) == n(fields_n(other)):
+                    break
+                await pg.wait_for_timeout(200)
+            after = await cell.inner_text()
+            await pg.unroute("**/api/v1/adif/fields?*")
+            check(pending == "…" and after == n(fields_n(other)),
+                  f"landing {first} -> {other}: Fields reads {pending!r} while loading, then {after!r}")
+
         # 12. The pane collapses, the content widens, and the choice survives a reload (#35)
         await pg.goto(f"{BASE}/adif/enumerations/band")
         await settle()
@@ -162,7 +194,7 @@ async def main():
         wide_after = await pg.locator(".content").evaluate("e => e.getBoundingClientRect().width")
         check("nav-collapsed" in (await pg.locator(".shell").get_attribute("class"))
               and await pg.locator('nav[aria-label="ADIF enumerations"]').is_hidden()
-              and await pg.get_by_label("ADIF version", exact=True).is_hidden()
+              and await pg.locator(".sidebar select").count() == 1 and await pg.locator(".sidebar select").is_hidden()
               and wide_after > wide_before + 150, f"collapse hides the navigation and widens the content ({wide_before:.0f} -> {wide_after:.0f}px)")
         await pg.reload()
         await settle()
@@ -227,6 +259,22 @@ async def main():
         side = await bp.locator(".sidebar").inner_text()
         check("(unavailable)" in side.lower() and "(0)" not in side, f"ADIF: the sidebar says unavailable, not (0): {side!r}")
         await broken.close()
+        # ...and a version that then loads clears it (#51): only the first version's enumerations fail.
+        if len(versions) > 1:
+            flaky = await b.new_context(viewport={"width": 1440, "height": 900})
+            fp = await flaky.new_page()
+            await fp.route(f"**/api/v1/adif/enumerations?adif_version={first}*", lambda r: r.fulfill(status=500, body="{}"))
+            await fp.goto(f"{BASE}/adif?v={first}")
+            await fp.wait_for_selector("p.state.error", timeout=15000)
+            await fp.locator(".sidebar select").select_option(other)
+            for _ in range(75):
+                recovered = await fp.locator("main").inner_text()
+                if "ADIF Reference" in recovered:
+                    break
+                await fp.wait_for_timeout(200)
+            check("ADIF Reference" in recovered and "Unavailable" not in recovered,
+                  f"a failed version, then one that loads: the section recovers without a reload")
+            await flaky.close()
 
         check(not errors, f"no console errors ({errors[:3]})")
         await b.close()

@@ -115,6 +115,7 @@ function AdifSection({ view: fixed }: { view?: string }) {
     if (!version) return;
     let live = true;
     setEnums(null);
+    setFailed(false);  // a version that loads clears a failure seen on another (#51)
     ok(api.GET("/api/v1/adif/enumerations", { params: { query: { adif_version: version } } }))
       .then(({ data }) => live && setEnums(data))
       .catch(() => live && setFailed(true));
