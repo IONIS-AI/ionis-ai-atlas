@@ -95,6 +95,17 @@ If your certificate comes from a **private CA**, the machines that connect to At
 CA's root. On Rocky or RHEL, copy it into `/etc/pki/ca-trust/source/anchors/` and run
 `sudo update-ca-trust`. A certificate from a public CA needs no extra step.
 
+## Verify what you pulled
+
+Every published image is signed. The key is in this repository; nothing else is needed.
+
+```
+cosign verify --key keys/ki7mt-images.pub docker.io/ki7mt/ionis-ai-atlas:0.1.1
+```
+
+One signature covers both architectures, the SBOM and the build provenance. Details, fingerprints
+and the development key: [SIGNING.md](SIGNING.md).
+
 ## What is in it today
 
 **ADIF Reference**: ADIF's bands, modes and submodes, DXCC entities, contest IDs and fields, for
