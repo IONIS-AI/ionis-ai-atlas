@@ -85,3 +85,15 @@ releases on the way out rather than trusting that signing happened.
 Transit keeps earlier key versions, so rotating does not invalidate existing signatures. A new
 version means a new public key and a new fingerprint, published here and announced in a GitHub
 security advisory.
+
+## A side effect on Docker Hub
+
+cosign stores each signature as an extra tag in the same repository, named
+`sha256-<digest>.sig`. It carries no architecture, and shields.io's `docker/v` badge cannot parse a
+tag list containing one — every variant returns *"invalid response data"*. The version badge
+therefore reads the release tag from GitHub instead, which the publish gate requires to match the
+published image anyway: `CHANNEL=prod` refuses unless the tag on origin points at HEAD.
+
+Signatures could instead be stored as OCI referrers (`--registry-referrers-mode oci-1-1`), which
+would leave the tag list clean, but registry support for referrers is uneven and it changes how
+verification discovers a signature. Not worth the risk for a badge.
