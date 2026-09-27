@@ -5,6 +5,7 @@ export const SECTIONS = [
   {
     path: "/adif",
     label: "ADIF Reference",
-    about: "ADIF's data types, fields and enumerations, every version loaded, exactly as adif.org publishes them.",
+    // Which ADIF versions are loaded is data (R17): Home lists them from the API, so none is named here.
+    about: "ADIF's data types, fields and enumerations, exactly as adif.org publishes them, for each ADIF version this Atlas carries.",
   },
 ];
