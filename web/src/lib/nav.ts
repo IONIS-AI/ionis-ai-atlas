@@ -7,14 +7,20 @@ export const PHONE_MAX = 760; // px; keep in step with the @media rule in styles
 
 type Store = Pick<Storage, "getItem" | "setItem">;
 
-export function readCollapsed(store: Store | undefined, width: number): boolean {
+/** The choice the reader made, or null if they have not made one (or storage is unavailable). */
+export function readSaved(store: Store | undefined): boolean | null {
   try {
     const saved = store?.getItem(NAV_KEY);
     if (saved === "1" || saved === "0") return saved === "1";
   } catch {
-    // no storage: fall through to the default
+    // no storage: no saved choice
   }
-  return width <= PHONE_MAX;
+  return null;
+}
+
+/** Collapsed or not: the reader's choice if they made one, else the default for this width. */
+export function readCollapsed(store: Store | undefined, width: number): boolean {
+  return readSaved(store) ?? width <= PHONE_MAX;
 }
 
 export function saveCollapsed(store: Store | undefined, collapsed: boolean): void {

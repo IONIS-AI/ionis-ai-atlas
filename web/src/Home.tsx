@@ -3,16 +3,15 @@
 // ADIF versions and which is current, and the counts for the current one.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type EnumerationSummary, type Release } from "./api/client";
+import { api, ok, totalCount, type EnumerationSummary, type Release } from "./api/client";
 import { SECTIONS } from "./sections";
 
 const n = (x: number) => x.toLocaleString("en-US");
-const counted = (r: Response) => Number(r.headers.get("X-Total-Count") ?? 0);
 
 type Loaded = {
-  release: { version: string; revision: string } | null;
+  release: { version: string; revision: string };
   releases: Release[];
-  current: string | null;
+  current: string;
   enums: EnumerationSummary[];
   fields: number;
   datatypes: number;
@@ -24,18 +23,19 @@ export function Home() {
   useEffect(() => {
     let live = true;
     (async () => {
+      // Any call that fails fails the page: a number the API did not give is not shown as one (#51).
       const [version, releases, current] = await Promise.all([
-        api.GET("/api/v1/version"), api.GET("/api/v1/adif/releases"), api.GET("/api/v1/adif/current"),
+        ok(api.GET("/api/v1/version")), ok(api.GET("/api/v1/adif/releases")), ok(api.GET("/api/v1/adif/current")),
       ]);
-      const v = current.data?.adif_version ?? null;
-      const q = { params: { query: { adif_version: v ?? undefined, limit: 1 } } };
+      const v = current.data.adif_version;
+      const q = { params: { query: { adif_version: v, limit: 1 } } };
       const [enums, fields, datatypes] = await Promise.all([
-        api.GET("/api/v1/adif/enumerations", { params: { query: { adif_version: v ?? undefined } } }),
-        api.GET("/api/v1/adif/fields", q), api.GET("/api/v1/adif/datatypes", q),
+        ok(api.GET("/api/v1/adif/enumerations", { params: { query: { adif_version: v } } })),
+        ok(api.GET("/api/v1/adif/fields", q)), ok(api.GET("/api/v1/adif/datatypes", q)),
       ]);
       if (live) setS({
-        release: version.data ?? null, releases: releases.data ?? [], current: v, enums: enums.data ?? [],
-        fields: counted(fields.response), datatypes: counted(datatypes.response),
+        release: version.data, releases: releases.data, current: v, enums: enums.data,
+        fields: totalCount(fields.response), datatypes: totalCount(datatypes.response),
       });
     })().catch(() => live && setS("error"));
     return () => { live = false; };
@@ -55,14 +55,14 @@ export function Home() {
           ADIF, the Amateur Data Interchange Format that every field and value is defined against.
         </p>
 
-        {s === "error" && <p className="state error">The API did not answer.</p>}
+        {s === "error" && <p className="state error">Unavailable: the API did not answer, so nothing loaded is shown.</p>}
         {s === null && <p className="state">Loading…</p>}
 
         {s && s !== "error" && (
           <div className="cards">
             <div className="card">
               <h2>Running</h2>
-              <p className="big">{rel?.version === "dev" ? "a development build" : `release ${rel?.version ?? "?"}`}</p>
+              <p className="big">{rel?.version === "dev" ? "a development build" : `release ${rel?.version}`}</p>
               <p className="muted">
                 {rel && rel.revision !== "unknown"
                   ? <>built from <code title={rel.revision}>{rel.revision.slice(0, 7)}</code></>
@@ -71,8 +71,8 @@ export function Home() {
             </div>
             <div className="card">
               <h2>ADIF loaded</h2>
-              <p className="big">{s.releases.map((r) => r.adif_version).join(" · ") || "none"}</p>
-              <p className="muted">current: <strong>{s.current ?? "none set"}</strong>, as published by adif.org, unmodified</p>
+              <p className="big">{s.releases.map((r) => r.adif_version).join(" · ")}</p>
+              <p className="muted">current: <strong>{s.current}</strong>, as published by adif.org, unmodified</p>
             </div>
             <div className="card">
               <h2>In ADIF {s.current}</h2>

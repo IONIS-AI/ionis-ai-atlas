@@ -45,6 +45,8 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .views .n { color: var(--ink-3); font-variant-numeric: tabular-nums; font-size: 12px; }
 .views a:hover { background: var(--surface-2); color: var(--ink); }
 .views a.active { background: var(--accent-wash); color: var(--accent); font-weight: 600; }
+.navbody { display: flex; flex-direction: column; gap: 18px; flex: 1; }
+.navbody[hidden] { display: none; }
 .note { font-size: 12.5px; color: var(--ink-3); margin: auto 0 0; }
 /* The « / » control (#35). Collapsed, the pane is a 44px rail holding only this button. */
 .navtoggle { align-self: flex-end; display: flex; align-items: center; gap: 8px; font: inherit; font-size: 15px;

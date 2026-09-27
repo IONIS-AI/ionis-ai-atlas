@@ -158,26 +158,75 @@ async def main():
         await pg.goto(f"{BASE}/adif/enumerations/band")
         await settle()
         wide_before = await pg.locator(".content").evaluate("e => e.getBoundingClientRect().width")
-        await pg.get_by_label("Hide ADIF navigation").click()
+        await pg.get_by_label("Hide ADIF version and navigation").click()
         wide_after = await pg.locator(".content").evaluate("e => e.getBoundingClientRect().width")
         check("nav-collapsed" in (await pg.locator(".shell").get_attribute("class"))
-              and await pg.locator('nav[aria-label="ADIF enumerations"]').count() == 0
+              and await pg.locator('nav[aria-label="ADIF enumerations"]').is_hidden()
+              and await pg.get_by_label("ADIF version", exact=True).is_hidden()
               and wide_after > wide_before + 150, f"collapse hides the navigation and widens the content ({wide_before:.0f} -> {wide_after:.0f}px)")
         await pg.reload()
         await settle()
         check("nav-collapsed" in (await pg.locator(".shell").get_attribute("class")), "still collapsed after a reload")
-        await pg.get_by_label("Show ADIF navigation").click()
-        check(await pg.locator('nav[aria-label="ADIF enumerations"]').count() == 1, "» brings the navigation back")
+        await pg.get_by_label("Show ADIF version and navigation").click()
+        check(await pg.locator('nav[aria-label="ADIF enumerations"]').is_visible(), "» brings the navigation back")
+        # The toggle names the region it shows and hides, and that region is not the one holding it (#51)
+        ctl = await pg.locator(".navtoggle").get_attribute("aria-controls")
+        check(bool(ctl) and await pg.locator(f"#{ctl} .navtoggle").count() == 0 and await pg.locator(f"#{ctl} nav").count() > 0,
+              f"the toggle's aria-controls ({ctl}) is the navigation it hides, not its own container")
 
         # 13. A phone: the pane starts collapsed and the content gets the screen (#42; it had 60px)
         phone = await b.new_context(viewport={"width": 390, "height": 844})
         pp = await phone.new_page()
         await pp.goto(f"{BASE}/adif/enumerations/primary_administrative_subdivision")
         await pp.wait_for_selector("tbody tr", timeout=15000)
-        box = await pp.locator(".tablewrap").evaluate("e => { const r = e.getBoundingClientRect(); return [r.top, r.height]; }")
+        # What the reader can SEE of the table: its box clipped by the viewport and by every ancestor
+        # that clips (a scroll container), after scrolling the page to bring it into view. The table's
+        # own height would pass even if a 60px region clipped it, which is what #42 was.
+        visible = """e => { e.scrollIntoView({block: "start"}); const r = e.getBoundingClientRect();
+            let top = Math.max(r.top, 0), bottom = Math.min(r.bottom, innerHeight);
+            for (let a = e.parentElement; a; a = a.parentElement) {
+              const s = getComputedStyle(a);
+              if (s.overflowY !== "visible" || s.overflowX !== "visible") {
+                const b = a.getBoundingClientRect(); top = Math.max(top, b.top); bottom = Math.min(bottom, b.bottom);
+              }
+            }
+            return Math.max(0, bottom - top); }"""
+        top = await pp.locator(".tablewrap").evaluate("e => e.getBoundingClientRect().top")
         check("nav-collapsed" in (await pp.locator(".shell").get_attribute("class")), "phone: navigation starts collapsed")
-        check(box[0] < 844 and box[1] > 400, f"phone: the table starts on the first screen and has room (top {box[0]:.0f}px, height {box[1]:.0f}px)")
+        check(top < 844, f"phone: the table starts on the first screen (top {top:.0f}px)")
+        seen = await pp.locator(".tablewrap").evaluate(visible)
+        check(seen > 600, f"phone: {seen:.0f}px of the table is visible once scrolled to, of an 844px screen")
+        # Paging from the bottom of a page lands at the top of the next (#51: the document scrolls here)
+        await pp.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await pp.get_by_label("Next page").click()
+        await pp.wait_for_url("**page=2**")
+        await pp.wait_for_timeout(300)
+        y = await pp.evaluate("window.scrollY")
+        check(y < 50, f"phone: Next from the bottom returns to the top (scrollY {y})")
+        # With no choice saved, the pane follows the window: widen to a desktop and it opens (#51)
+        await pp.set_viewport_size({"width": 1280, "height": 844})
+        await pp.wait_for_timeout(200)
+        check("nav-collapsed" not in (await pp.locator(".shell").get_attribute("class")), "phone widened to desktop: the pane opens")
+        await pp.set_viewport_size({"width": 390, "height": 844})
+        await pp.wait_for_timeout(200)
+        check("nav-collapsed" in (await pp.locator(".shell").get_attribute("class")), "and narrowed again: it collapses")
         await phone.close()
+
+        # 15. A failing API is shown as unavailable, never as a zero count (#51). Its own context: the
+        #     browser logs the 500s it is made to see, which are not errors of the page.
+        broken = await b.new_context(viewport={"width": 1440, "height": 900})
+        bp = await broken.new_page()
+        await bp.route("**/api/v1/adif/enumerations?*", lambda r: r.fulfill(status=500, body="{}"))
+        await bp.route("**/api/v1/adif/fields?*", lambda r: r.fulfill(status=500, body="{}"))
+        await bp.goto(f"{BASE}/")
+        await bp.wait_for_selector("p.state.error", timeout=15000)
+        home = await bp.locator("main").inner_text()
+        check("Unavailable" in home and "0 enumerations" not in home, "Home: a failing API reads as unavailable, not as 0")
+        await bp.goto(f"{BASE}/adif")
+        await bp.wait_for_selector("p.state.error", timeout=15000)
+        side = await bp.locator(".sidebar").inner_text()
+        check("(unavailable)" in side.lower() and "(0)" not in side, f"ADIF: the sidebar says unavailable, not (0): {side!r}")
+        await broken.close()
 
         check(not errors, f"no console errors ({errors[:3]})")
         await b.close()

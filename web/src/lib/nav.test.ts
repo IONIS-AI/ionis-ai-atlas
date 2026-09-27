@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NAV_KEY, readCollapsed, saveCollapsed } from "./nav";
+import { NAV_KEY, readCollapsed, readSaved, saveCollapsed } from "./nav";
 
 const memory = () => {
   const m = new Map<string, string>();
@@ -23,11 +23,19 @@ describe("readCollapsed", () => {
   it("ignores a value it did not write", () => {
     const s = memory();
     s.setItem(NAV_KEY, "yes");
-    expect(readCollapsed(s, 1440)).toBe(false);
+    // At phone width, where "ignored" (collapsed, the default) and "read as open" differ.
+    expect(readCollapsed(s, 390)).toBe(true);
+    expect(readSaved(s)).toBe(null);
   });
   it("works with no storage at all", () => {
     expect(readCollapsed(undefined, 390)).toBe(true);
     expect(() => saveCollapsed(undefined, true)).not.toThrow();
+  });
+  it("has no saved choice until one is made", () => {
+    const s = memory();
+    expect(readSaved(s)).toBe(null);
+    saveCollapsed(s, false);
+    expect(readSaved(s)).toBe(false);
   });
   it("works when storage refuses", () => {
     expect(readCollapsed(refusing, 1440)).toBe(false);
