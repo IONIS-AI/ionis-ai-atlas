@@ -4,9 +4,8 @@
 #   make up / down   run the stack from the local images (http://127.0.0.1:8080)
 #   make dev         Docker (Desktop): build both images from this checkout and run them; after a
 #                    `git pull`, `make dev` again picks up the changes. `make dev-down` stops it.
-#   make publish     build this machine's architecture and push ki7mt/ionis-ai-atlas-dev:<kind>-<sha>-<arch>
-#                    (one private repository; kind = app | db)
-#   make publish-manifest   join amd64 + arm64 into ki7mt/ionis-ai-atlas-dev:<kind>-<sha>, once both are pushed
+#   make publish     on the M3 (Docker Desktop): build amd64 + arm64 and push
+#                    ki7mt/ionis-ai-atlas-dev:<kind>-<sha> (one private repository; kind = app | db)
 #   make verify-pull TAG=<sha>   pull from docker.io and prove the published compose file runs
 #   make check-browser  render both pages in headless Chromium and fail on anything the CSP blocks
 #                    (needs the stack up: `make dev` or `make up` first)
@@ -15,7 +14,7 @@ TAG    ?= dev
 LOCAL  := ATLAS_APP_IMAGE=localhost/ionis-ai-atlas:$(TAG) ATLAS_DB_IMAGE=localhost/ionis-ai-atlas-db:$(TAG)
 PY     ?= python3.12
 
-.PHONY: images openapi check-vendor test up down dev dev-down publish publish-manifest verify-pull check-browser
+.PHONY: images openapi check-vendor test up down dev dev-down publish verify-pull check-browser
 
 check-vendor:
 	scripts/sync-from-ionis-core.sh --check
@@ -50,10 +49,7 @@ dev-down:
 	$(DEV) down
 
 publish:
-	scripts/publish.sh arch
-
-publish-manifest:
-	scripts/publish.sh manifest
+	scripts/publish.sh
 
 verify-pull:
 	scripts/verify-pull.sh $(TAG)

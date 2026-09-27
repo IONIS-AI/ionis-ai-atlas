@@ -42,13 +42,15 @@ The development overlay runs the database without its volume, so every rebuild s
 
 The dev release runs the same process prod will, into **one private** repository,
 `ki7mt/ionis-ai-atlas-dev`, with the image kind in the tag.
-Each architecture is built natively on its own machine, from a clean checkout of `main`:
+One machine, one command: on the M3, from a clean checkout of `main`, Docker Desktop builds amd64 and
+arm64 together (the non-native one under emulation) and pushes both:
 
 ```
-make publish                     # on 9975 (amd64), then the M3 (arm64): ionis-ai-atlas-dev:<kind>-<sha>-<arch>
-make publish-manifest            # on either, once both are pushed: ionis-ai-atlas-dev:<kind>-<sha>
-make verify-pull TAG=<sha>       # pull from docker.io and prove the published compose file runs
+make publish                     # on the M3: ionis-ai-atlas-dev:app-<sha> and db-<sha>, amd64 + arm64
+make verify-pull TAG=<sha>       # optional, before a release: pull from docker.io, prove it runs
 ```
+
+Each image carries an SBOM and build provenance as registry attestations.
 
 The push credential comes from Vault (`secret/dockerhub/account/ki7mt`) into a temporary auth file that
 is deleted afterwards. Tags are never overwritten. A dev push to a repository that is not private is
