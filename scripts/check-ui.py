@@ -129,6 +129,56 @@ async def main():
         check(href == "/adif/enumerations/submode?v=3.1.6", f"sidebar link: {href!r}")
         check(await pg.locator('.sidebar input[type="search"]').count() == 0, "no search box left in the sidebar")
 
+        # 10. The brand is the way Home (#36), and Home says what's running and loaded (#37)
+        await pg.goto(f"{BASE}/adif/enumerations/band")
+        await settle()
+        await pg.get_by_label("IONIS-AI Atlas home").click()
+        await pg.wait_for_selector(".home .cards", timeout=15000)
+        home = await pg.locator(".home").inner_text()
+        release = api("/version")[0]
+        loaded = [r["adif_version"] for r in api("/adif/releases")[0]]
+        check(pg.url.rstrip("/") == BASE.rstrip("/") and "IONIS-AI Atlas" in await pg.locator("h1").inner_text(),
+              f"brand opens Home: {pg.url}")
+        check(("a development build" if release["version"] == "dev" else f"release {release['version']}") in home
+              and all(v in home for v in loaded), "Home shows the running release and every loaded ADIF version")
+
+        # 11. Each section opens on its own landing page, listing everything it holds (#44)
+        await pg.get_by_role("link", name="ADIF Reference").first.click()
+        # Wait for the list to settle, not for its first row: Data Types and Fields render before the
+        # enumerations arrive. Polled from here: page.wait_for_function evaluates a string, which
+        # Atlas's CSP (script-src 'self', no unsafe-eval) rightly refuses.
+        for _ in range(75):
+            if await rows() == 2 + len(TOTALS):
+                break
+            await pg.wait_for_timeout(200)
+        check(pg.url.endswith("/adif") and await pg.locator("h1").inner_text() == "ADIF Reference"
+              and await rows() == 2 + len(TOTALS), f"ADIF landing lists data types, fields and {len(TOTALS)} enumerations")
+
+        # 12. The pane collapses, the content widens, and the choice survives a reload (#35)
+        await pg.goto(f"{BASE}/adif/enumerations/band")
+        await settle()
+        wide_before = await pg.locator(".content").evaluate("e => e.getBoundingClientRect().width")
+        await pg.get_by_label("Hide ADIF navigation").click()
+        wide_after = await pg.locator(".content").evaluate("e => e.getBoundingClientRect().width")
+        check("nav-collapsed" in (await pg.locator(".shell").get_attribute("class"))
+              and await pg.locator('nav[aria-label="ADIF enumerations"]').count() == 0
+              and wide_after > wide_before + 150, f"collapse hides the navigation and widens the content ({wide_before:.0f} -> {wide_after:.0f}px)")
+        await pg.reload()
+        await settle()
+        check("nav-collapsed" in (await pg.locator(".shell").get_attribute("class")), "still collapsed after a reload")
+        await pg.get_by_label("Show ADIF navigation").click()
+        check(await pg.locator('nav[aria-label="ADIF enumerations"]').count() == 1, "» brings the navigation back")
+
+        # 13. A phone: the pane starts collapsed and the content gets the screen (#42; it had 60px)
+        phone = await b.new_context(viewport={"width": 390, "height": 844})
+        pp = await phone.new_page()
+        await pp.goto(f"{BASE}/adif/enumerations/primary_administrative_subdivision")
+        await pp.wait_for_selector("tbody tr", timeout=15000)
+        box = await pp.locator(".tablewrap").evaluate("e => { const r = e.getBoundingClientRect(); return [r.top, r.height]; }")
+        check("nav-collapsed" in (await pp.locator(".shell").get_attribute("class")), "phone: navigation starts collapsed")
+        check(box[0] < 844 and box[1] > 400, f"phone: the table starts on the first screen and has room (top {box[0]:.0f}px, height {box[1]:.0f}px)")
+        await phone.close()
+
         check(not errors, f"no console errors ({errors[:3]})")
         await b.close()
     print("\n".join(notes + fails))
