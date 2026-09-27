@@ -15,13 +15,23 @@ RUN npm run gen:api && npm run build \
        node_modules/swagger-ui-dist/favicon-32x32.png node_modules/swagger-ui-dist/LICENSE /out/swagger/ \
  && cp -r dist /out/web
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.6
-RUN microdnf -y install python3.12 python3.12-pip && microdnf clean all \
- && python3.12 -m venv /opt/atlas && useradd -r -u 1001 -g 0 -d /app atlas
-ENV PATH=/opt/atlas/bin:$PATH
+# The current UBI 9 minor, not a pinned one, and every package brought up to date. Red Hat ships
+# fixes on the current stream: 0.1.0 was built on a pinned 9.6 without an upgrade and carried 27
+# fixable HIGH vulnerabilities that were already fixed in 9.8 (ionis-ai-atlas#18).
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 WORKDIR /app
 COPY api/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# pip is needed to install the dependencies and never at run time, so it leaves the image in the same
+# layer: the venv's copy and the RPM. Neither can then carry a finding.
+RUN microdnf -y upgrade --refresh \
+ && microdnf -y install python3.12 python3.12-pip \
+ && python3.12 -m venv /opt/atlas \
+ && /opt/atlas/bin/pip install --no-cache-dir -r requirements.txt \
+ && /opt/atlas/bin/pip uninstall -y pip \
+ && microdnf -y remove python3.12-pip \
+ && microdnf clean all \
+ && useradd -r -u 1001 -g 0 -d /app atlas
+ENV PATH=/opt/atlas/bin:$PATH
 COPY api/atlas_api ./atlas_api
 COPY --from=web /out/web ./static/web
 COPY --from=web /out/swagger ./static/swagger

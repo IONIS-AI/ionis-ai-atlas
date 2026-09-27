@@ -11,6 +11,8 @@
 #   make release-dryrun   run the whole prod publish path against a throwaway repository, then
 #                    delete it. Run it BEFORE tagging: a release should never be this code's
 #                    first execution.
+#   make scan        scan the local images for vulnerabilities; fails on any fixable HIGH or CRITICAL
+#                    (scripts/scan.sh holds the threshold; the nightly workflow scans the release)
 #   make check-browser  render both pages in headless Chromium and fail on anything the CSP blocks
 #                    (needs the stack up: `make dev` or `make up` first)
 ENGINE ?= podman
@@ -18,7 +20,7 @@ TAG    ?= dev
 LOCAL  := ATLAS_APP_IMAGE=localhost/ionis-ai-atlas:$(TAG) ATLAS_DB_IMAGE=localhost/ionis-ai-atlas-db:$(TAG)
 PY     ?= python3.12
 
-.PHONY: images openapi check-vendor test up down dev dev-down publish verify-pull check-browser release-dryrun
+.PHONY: images openapi check-vendor test up down dev dev-down publish verify-pull check-browser release-dryrun scan
 
 check-vendor:
 	scripts/sync-from-ionis-core.sh --check
@@ -60,6 +62,9 @@ release-dryrun:
 
 verify-pull:
 	scripts/verify-pull.sh $(TAG)
+
+scan:
+	ENGINE=$(ENGINE) scripts/scan.sh localhost/ionis-ai-atlas:$(TAG) localhost/ionis-ai-atlas-db:$(TAG)
 
 # The CSP is enforced by the browser, so nothing server-side can prove the pages still work under
 # it. BASE overrides the URL; the stack must already be running.
