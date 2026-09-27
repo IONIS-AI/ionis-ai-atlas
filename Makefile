@@ -4,12 +4,15 @@
 #   make up / down   run the stack from the local images (http://127.0.0.1:8080)
 #   make dev         Docker (Desktop): build both images from this checkout and run them; after a
 #                    `git pull`, `make dev` again picks up the changes. `make dev-down` stops it.
+#   make publish     build this machine's architecture and push ki7mt/<image>-dev:<sha>-<arch> (private)
+#   make publish-manifest   join amd64 + arm64 into ki7mt/<image>-dev:<sha>, once both are pushed
+#   make verify-pull TAG=<sha>   pull from docker.io and prove the published compose file runs
 ENGINE ?= podman
 TAG    ?= dev
 LOCAL  := ATLAS_REGISTRY=localhost ATLAS_APP=ionis-ai-atlas ATLAS_DB=ionis-ai-atlas-db ATLAS_TAG=$(TAG)
 PY     ?= python3.12
 
-.PHONY: images openapi check-vendor test up down dev dev-down
+.PHONY: images openapi check-vendor test up down dev dev-down publish publish-manifest verify-pull
 
 check-vendor:
 	scripts/sync-from-ionis-core.sh --check
@@ -42,3 +45,12 @@ dev: check-vendor
 
 dev-down:
 	$(DEV) down
+
+publish:
+	scripts/publish.sh arch
+
+publish-manifest:
+	scripts/publish.sh manifest
+
+verify-pull:
+	scripts/verify-pull.sh $(TAG)
