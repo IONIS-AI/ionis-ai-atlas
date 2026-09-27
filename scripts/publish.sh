@@ -116,6 +116,37 @@ for p in ${PLATFORMS//,/ }; do
   case ",${platforms// /}," in *",$p,"*|*",$p/"*) ;; *) die "builder $BUILDER cannot build $p (has: $platforms)" ;; esac
 done
 
+# THE GATE (ionis-ai-atlas#18). Nothing is pushed until every architecture has been scanned and
+# passed. A multi-arch `--push` build leaves nothing on this machine to scan, and scan.sh's remote
+# mode pulls anonymously, so it cannot read the private dev repository either. So each platform is
+# built with --load first, scanned locally, and only then is the combined multi-arch image pushed.
+# The second build reuses the builder's cache, so the push costs a fraction of the first build.
+#
+# scan.sh's exit codes: 0 pass, 1 fixable HIGH/CRITICAL, 2 the scanner did not run. 2 stops the
+# publish exactly like 1 — a scanner that did not run is not a pass.
+scan_local() {                     # $1 = kind, $2 = context dir
+  local kind="$1" ctx="$2" plat arch scan_tag rc
+  for plat in ${PLATFORMS//,/ }; do
+    arch="${plat##*/}"
+    scan_tag="localhost/atlas-scan-$kind:$arch"
+    echo "publish: building $kind for $plat to scan it"
+    docker buildx build --builder "$BUILDER" --platform "$plat" --pull --load \
+      -t "$scan_tag" -f "$ctx/Containerfile" "$ctx" >/dev/null
+    rc=0; ENGINE=docker scripts/scan.sh "$scan_tag" || rc=$?
+    docker image rm -f "$scan_tag" >/dev/null 2>&1 || true
+    case "$rc" in
+      0) ;;
+      1) die "$kind ($plat) has fixable HIGH/CRITICAL vulnerabilities; nothing was pushed" ;;
+      *) die "$kind ($plat): the scanner did not run (exit $rc); refusing to publish unscanned images" ;;
+    esac
+  done
+}
+
+for kind in "${KINDS[@]}"; do
+  if [ "$kind" = db ]; then ctx=db; else ctx=.; fi
+  scan_local "$kind" "$ctx"
+done
+
 for kind in "${KINDS[@]}"; do
   read -r repo tag <<<"$(ref_for "$kind")"
   ref="docker.io/$NAMESPACE/$repo:$tag"
