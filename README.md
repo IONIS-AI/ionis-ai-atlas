@@ -65,6 +65,31 @@ Tested with the published release on a Rocky Linux 9 VM (SELinux enforcing): ngi
 certificate from a private CA, reached from other machines by DNS name and by IP. Certificates
 verified, and requests under any other name were refused.
 
+### Host prerequisites: Rocky Linux 9 / RHEL 9
+
+This is everything the host needs. Atlas brings everything else in its containers.
+
+1. **Docker Engine**, from Docker's repository for RHEL. Remove podman's `docker` shim first, because
+   it conflicts:
+   ```
+   sudo dnf remove -y podman-docker
+   sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+   sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+   sudo systemctl enable --now docker
+   ```
+2. **nginx**, from AppStream: `sudo dnf install -y nginx && sudo systemctl enable --now nginx`
+   (after adding the configuration above).
+3. **SELinux**: let nginx connect to Atlas: `sudo setsebool -P httpd_can_network_relay on`.
+4. **Firewall**, if firewalld is running:
+   ```
+   sudo firewall-cmd --permanent --add-service=http --add-service=https
+   sudo firewall-cmd --reload
+   ```
+
+If your certificate comes from a **private CA**, the machines that connect to Atlas must trust that
+CA's root. On Rocky or RHEL, copy it into `/etc/pki/ca-trust/source/anchors/` and run
+`sudo update-ca-trust`. A certificate from a public CA needs no extra step.
+
 ## What is in it today
 
 **ADIF Reference**: ADIF's bands, modes and submodes, DXCC entities, contest IDs and fields, for
