@@ -20,12 +20,6 @@ CA_CERT="${CA_CERT:-$HOME/ca-roots/ki7mt-root.crt}"
 SIGN_KEY_PROD=ki7mt-images
 SIGN_KEY_DEV=ki7mt-images-dev
 
-# vault_token_fresh — a token minted NOW from the host AppRole.
-#
-# Never the Vault Agent's sink token. AppRole tokens keep the policies they were ISSUED with, so a
-# sink token minted before a policy was attached fails forever and reads as a missing grant rather
-# than a stale token. That cost us hours on the Docker Hub secret; this function exists so the
-# publish path cannot repeat it.
 # vault_addr — the Vault address from the host AppRole. SIGNING ONLY: verification needs no Vault,
 # so nothing on the verify path may call this (see cosign() below).
 vault_addr() {
@@ -34,6 +28,12 @@ vault_addr() {
   python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['vault_addr'].rstrip('/'))" "$approle"
 }
 
+# vault_token_fresh — a token minted NOW from the host AppRole.
+#
+# Never the Vault Agent's sink token. AppRole tokens keep the policies they were ISSUED with, so a
+# sink token minted before a policy was attached fails forever and reads as a missing grant rather
+# than a stale token. That cost us hours on the Docker Hub secret; this function exists so the
+# publish path cannot repeat it.
 vault_token_fresh() {
   local approle="${VAULT_APPROLE_FILE:-$HOME/.config/secrets/vault-approle.json}"
   [ -r "$approle" ] || { echo "sign: no AppRole at $approle" >&2; return 1; }
