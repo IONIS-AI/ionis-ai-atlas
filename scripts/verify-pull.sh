@@ -28,10 +28,13 @@ if [ "$CHANNEL" = prod ]; then
   DB="docker.io/$NAMESPACE/ionis-ai-atlas-db:$SHA"
 else
   . scripts/registry-lib.sh
-  . scripts/sign-lib.sh         # verify_signed
-APP="docker.io/$NAMESPACE/ionis-ai-atlas-dev:app-$SHA"   # dev: one private repository, kind in the tag
+  APP="docker.io/$NAMESPACE/ionis-ai-atlas-dev:app-$SHA"   # dev: one private repository, kind in the tag
   DB="docker.io/$NAMESPACE/ionis-ai-atlas-dev:db-$SHA"
 fi
+# Outside the branch: BOTH channels verify signatures. Sourced inside the dev arm, prod reached the
+# checks with verify_signed undefined and reported "command not found" as a failed signature --
+# a broken check reading as a bad release, on the channel that matters most.
+. scripts/sign-lib.sh         # verify_signed
 URL=http://127.0.0.1:8080
 PROJECT=atlas-verify
 if [ "$ENGINE" = podman ]; then COMPOSE=(podman compose); else COMPOSE=(docker compose); fi
