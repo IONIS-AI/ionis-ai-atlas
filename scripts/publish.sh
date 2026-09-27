@@ -42,7 +42,9 @@ case "$CHANNEL" in
   dev)  VISIBILITY=private
         ref_for() { echo "ionis-ai-atlas-dev $1-$SHA"; } ;;
   prod) VISIBILITY=public
-        VERSION="$(git tag --points-at HEAD | sed -n 's/^v\([0-9]\+\.[0-9]\+\.[0-9]\+\)$/\1/p' | head -1)"
+        # POSIX BRE: \+ is a GNU extension. BSD sed (macOS) reads it as a literal '+', so this
+        # matched nothing on the M3 -- the one machine designated to publish releases.
+        VERSION="$(git tag --points-at HEAD | sed -n 's/^v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p' | head -1)"
         [ -n "$VERSION" ] || die "CHANNEL=prod publishes a release: tag this commit vX.Y.Z first"
         ref_for() { case "$1" in app) echo "ionis-ai-atlas $VERSION" ;; db) echo "ionis-ai-atlas-db $VERSION" ;; esac; } ;;
   *)    die "CHANNEL must be dev or prod, not $CHANNEL" ;;
