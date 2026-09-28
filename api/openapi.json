@@ -1080,7 +1080,7 @@
     },
     "/api/v1/adif/enumerations": {
       "get": {
-        "description": "Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x), its\ncanonical route segment (`table`) and the file ADIF publishes it as.",
+        "description": "The ADIF enumerations the version publishes (25 for ADIF 3.1.x), each with its record count,\nits canonical route segment (`table`) and the file ADIF publishes it as. Paged per R15.",
         "operationId": "enumerations_api_v1_adif_enumerations_get",
         "parameters": [
           {
@@ -1100,6 +1100,39 @@
               "description": "ADIF version, e.g. 3.1.7. Defaults to the lab's current version.",
               "title": "Adif Version"
             }
+          },
+          {
+            "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Rows to skip, for the page after `limit` rows.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip, for the page after `limit` rows.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -1115,7 +1148,21 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "Link": {
+                "description": "Present while more rows remain: `<url>; rel=\"next\"`",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Total-Count": {
+                "description": "Rows matching the filters, across all pages",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -1136,7 +1183,7 @@
     },
     "/api/v1/adif/enumerations/{name}": {
       "get": {
-        "description": "One ADIF enumeration, with the columns ADIF defines for it. **The canonical route segment is\nthe table name**, ADIF's name in lower case (e.g. `secondary_administrative_subdivision`), which\nis also the suffix of the file ADIF publishes it as; ADIF's own spelling\n(`Secondary_Administrative_Subdivision`) is accepted too, in any case. Anything else is 404.\n\nPaged with `limit` / `offset`, searched with `q`, and **filtered exactly on any of its columns**\nby name, e.g. `?dxcc_entity_code=15&deleted=false`. A filter naming a column the enumeration\ndoes not have is refused (400) rather than ignored.",
+        "description": "One ADIF enumeration, with the columns ADIF defines for it. **The canonical route segment is\nthe table name**, ADIF's name in lower case (e.g. `secondary_administrative_subdivision`), which\nis also the suffix of the file ADIF publishes it as; ADIF's own spelling\n(`Secondary_Administrative_Subdivision`) is accepted too, in any case. Anything else is 404.\n\nPaged with `limit` / `offset`, searched with `q`, and **filtered exactly on any of its columns**\nby name, e.g. `?dxcc_entity_code=15&deleted=false`. A filter naming a column the enumeration\ndoes not have is refused (400) rather than ignored, and so is a flag (`deleted`, `import_only`)\ngiven anything but `true` or `false`. An empty flag reads as false.",
         "operationId": "enumeration_api_v1_adif_enumerations__name__get",
         "parameters": [
           {
@@ -1671,8 +1718,43 @@
     },
     "/api/v1/adif/releases": {
       "get": {
-        "description": "Every ADIF version loaded, with the SHA-256 of the adif.org file it was loaded from.",
+        "description": "Every ADIF version loaded, oldest first, with the SHA-256 of the adif.org file it was loaded\nfrom. Paged per R15.",
         "operationId": "releases_api_v1_adif_releases_get",
+        "parameters": [
+          {
+            "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour).",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Rows to skip, for the page after `limit` rows.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip, for the page after `limit` rows.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1686,7 +1768,31 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "Link": {
+                "description": "Present while more rows remain: `<url>; rel=\"next\"`",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Total-Count": {
+                "description": "Rows matching the filters, across all pages",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Releases",

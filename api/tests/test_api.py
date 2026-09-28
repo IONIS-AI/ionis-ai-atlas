@@ -93,6 +93,59 @@ def test_every_published_enumeration_is_listed_with_adifs_total(client):
     assert "Country" not in {x["name"] for x in e}
 
 
+def test_every_loaded_version_lists_exactly_its_own_enumerations(client):
+    """#63: an older version lists what ADIF published for it, not what a later release added."""
+    for rel in client.get("/api/v1/adif/releases").json():
+        v = rel["adif_version"]
+        names = {x["name"] for x in client.get("/api/v1/adif/enumerations", params={"adif_version": v}).json()}
+        assert names == set(published(v)["Enumerations"]), v
+
+
+def test_an_enumeration_with_no_records_for_the_version_is_not_listed(monkeypatch):
+    """#63's case, which today's data can't show: a table a later ADIF release added (records only for
+    that release) must not appear in an older version's list, even with zero records."""
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    from atlas_api import main
+    counts = {"band": 33, "future_enum": 0}
+    monkeypatch.setattr(main, "version_or_current", lambda v: "3.1.7")
+    monkeypatch.setattr(main, "enumeration_tables", lambda: {"Band": "band", "Future_Enum": "future_enum"})
+    seen = []
+
+    def fake_rows(query, args=()):
+        table = next(t for t in counts if f"Identifier('{t}')" in repr(query))
+        seen.append(table)
+        return [{"n": counts[table], "io": 0}]
+    monkeypatch.setattr(main, "rows", fake_rows)
+    req = Request({"type": "http", "method": "GET", "path": "/api/v1/adif/enumerations", "query_string": b"",
+                   "headers": [], "server": ("localhost", 80), "scheme": "http"})
+    listed = main.enumerations(req, Response(), None, None, 0)
+    assert seen == ["band", "future_enum"]
+    assert [e["name"] for e in listed] == ["Band"]
+
+
+@pytest.mark.parametrize("path", ["/api/v1/adif/releases", "/api/v1/adif/enumerations"])
+def test_metadata_lists_page_like_every_other_list(client, path):
+    """#64, R15: limit and offset, X-Total-Count, and a next Link that walks to the full list."""
+    full = client.get(path)
+    assert full.headers["X-Total-Count"] == str(len(full.json())) and "Link" not in full.headers
+    got, url = [], f"{path}?limit=1"
+    while url:
+        page = client.get(url)
+        assert len(page.json()) == 1 and page.headers["X-Total-Count"] == str(len(full.json()))
+        got += page.json()
+        url = page.headers["Link"].split(">")[0].lstrip("<") if "Link" in page.headers else None
+    assert got == full.json()
+    assert client.get(path, params={"offset": len(full.json())}).json() == []
+
+
+def test_releases_are_in_version_order(client):
+    """Numbers, not text: as text, 3.1.10 would sort before 3.1.9."""
+    versions = [r["adif_version"] for r in client.get("/api/v1/adif/releases").json()]
+    assert versions == sorted(versions, key=lambda v: [int(p) for p in v.split(".")])
+
+
 def test_every_enumeration_is_readable_and_complete(client):
     for x in client.get("/api/v1/adif/enumerations").json():
         body = client.get(f"/api/v1/adif/enumerations/{x['name']}").json()
