@@ -5,9 +5,32 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 
-from atlas_api.main import SECURITY_HEADERS, app
+from atlas_api.main import app
 
 ROUTES = ["/api/docs", "/api/docs/init.js", "/api/v1/openapi.json"]
+
+# THE CONTRACT, written out here and never imported from the code under test (#59): an oracle taken
+# from main.SECURITY_HEADERS moves with the code, so deleting a header there deleted it from the test
+# too, and every test still passed. BUILD-SPEC "The browser boundary" requires a strict CSP allowing
+# only Atlas's own origin, X-Content-Type-Options: nosniff, frame-ancestors 'none' and a
+# Referrer-Policy; the rest are the defence in depth Atlas promises alongside them.
+REQUIRED = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+}
+CSP_REQUIRED = {"default-src": "'self'", "script-src": "'self'", "object-src": "'none'",
+                "base-uri": "'none'", "frame-ancestors": "'none'"}
+
+
+def assert_boundary_headers(r):
+    for name, value in REQUIRED.items():
+        assert r.headers.get(name) == value, f"{name} on {r.request.url} (HTTP {r.status_code})"
+    csp = dict(d.strip().split(" ", 1) for d in r.headers.get("Content-Security-Policy", "").split(";") if d.strip())
+    for directive, value in CSP_REQUIRED.items():
+        assert csp.get(directive) == value, f"CSP {directive} on {r.request.url} (HTTP {r.status_code})"
 
 
 @pytest.fixture(scope="module")
@@ -32,18 +55,28 @@ def test_foreign_host_refused(host):
 def test_security_headers_on_every_response(local, path):
     r = local.get(path)
     assert r.status_code == 200
-    for name, value in SECURITY_HEADERS.items():
-        assert r.headers.get(name) == value, name
+    assert_boundary_headers(r)
+
+
+@pytest.mark.parametrize("path, status", [
+    ("/api/v1/no-such-route", 404),                  # not found
+    ("/api/v1/adif/bands?limit=-1", 422),            # refused by validation, before any database call
+])
+def test_security_headers_on_errors(local, path, status):
+    r = local.get(path)
+    assert r.status_code == status
+    assert_boundary_headers(r)
 
 
 def test_security_headers_on_refusals():
     r = TestClient(app, base_url="http://evil.example").get("/api/docs")
-    for name, value in SECURITY_HEADERS.items():
-        assert r.headers.get(name) == value, name
+    assert r.status_code == 400
+    assert_boundary_headers(r)
 
 
-def test_csp_allows_no_inline_or_remote_script():
-    csp = dict(d.split(" ", 1) for d in SECURITY_HEADERS["Content-Security-Policy"].split("; "))
+def test_csp_allows_no_inline_or_remote_script(local):
+    """Read from the response the browser gets, not from the code that builds it."""
+    csp = dict(d.strip().split(" ", 1) for d in local.get("/api/docs").headers["Content-Security-Policy"].split(";"))
     assert csp["script-src"] == "'self'"
     assert csp["default-src"] == "'self'"
     assert csp["frame-ancestors"] == "'none'"
