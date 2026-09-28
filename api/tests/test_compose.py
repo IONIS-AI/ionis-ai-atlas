@@ -50,3 +50,16 @@ def test_dev_overlay_does_not_switch_healthchecks_off():
         hc = svc.get("healthcheck")
         assert hc is None or (hc.get("test") and not hc.get("disable")), \
             f"compose.dev.yaml: {name} overrides its healthcheck away"
+
+
+@pytest.mark.parametrize("service", ["atlas", "db"])
+def test_compose_names_a_release_stream(service):
+    """#58, BUILD-SPEC "Release streams": the published compose file names a stream tag. Not
+    `:latest` (it crosses breaking changes) and not an exact version (a stream gets fixes by pull).
+    During 0.x a stream is major.minor; from 1.0 it is the major number."""
+    import re
+    image = services("compose.yaml")[service]["image"]
+    default = re.fullmatch(r"\$\{ATLAS_(APP|DB)_IMAGE:-(.+)\}", image)
+    assert default, f"{service}: the image must stay overridable by ATLAS_*_IMAGE (pinning, dev): {image}"
+    tag = default.group(2).rsplit(":", 1)[1]
+    assert re.fullmatch(r"0\.\d+|[1-9]\d*", tag), f"{service}: {tag!r} is not a release stream"
