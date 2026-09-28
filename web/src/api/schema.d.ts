@@ -115,8 +115,8 @@ export interface paths {
         };
         /**
          * Enumerations
-         * @description Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x), its
-         *     canonical route segment (`table`) and the file ADIF publishes it as.
+         * @description The ADIF enumerations the version publishes (25 for ADIF 3.1.x), each with its record count,
+         *     its canonical route segment (`table`) and the file ADIF publishes it as. Paged per R15.
          */
         get: operations["enumerations_api_v1_adif_enumerations_get"];
         put?: never;
@@ -143,7 +143,8 @@ export interface paths {
          *
          *     Paged with `limit` / `offset`, searched with `q`, and **filtered exactly on any of its columns**
          *     by name, e.g. `?dxcc_entity_code=15&deleted=false`. A filter naming a column the enumeration
-         *     does not have is refused (400) rather than ignored.
+         *     does not have is refused (400) rather than ignored, and so is a flag (`deleted`, `import_only`)
+         *     given anything but `true` or `false`. An empty flag reads as false.
          */
         get: operations["enumeration_api_v1_adif_enumerations__name__get"];
         put?: never;
@@ -227,7 +228,8 @@ export interface paths {
         };
         /**
          * Releases
-         * @description Every ADIF version loaded, with the SHA-256 of the adif.org file it was loaded from.
+         * @description Every ADIF version loaded, oldest first, with the SHA-256 of the adif.org file it was loaded
+         *     from. Paged per R15.
          */
         get: operations["releases_api_v1_adif_releases_get"];
         put?: never;
@@ -659,6 +661,10 @@ export interface operations {
             query?: {
                 /** @description ADIF version, e.g. 3.1.7. Defaults to the lab's current version. */
                 adif_version?: string | null;
+                /** @description Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour). */
+                limit?: number | null;
+                /** @description Rows to skip, for the page after `limit` rows. */
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -669,6 +675,10 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Present while more rows remain: `<url>; rel="next"` */
+                    Link?: string;
+                    /** @description Rows matching the filters, across all pages */
+                    "X-Total-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -863,7 +873,12 @@ export interface operations {
     };
     releases_api_v1_adif_releases_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Rows per page, 1 to 1000. Omit to get every row (the pre-R15 behaviour). */
+                limit?: number | null;
+                /** @description Rows to skip, for the page after `limit` rows. */
+                offset?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -873,10 +888,23 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Present while more rows remain: `<url>; rel="next"` */
+                    Link?: string;
+                    /** @description Rows matching the filters, across all pages */
+                    "X-Total-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["Release"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

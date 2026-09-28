@@ -175,6 +175,17 @@ def paged(request: Request, response: Response, base: str | sql.Composable, args
     return data, total
 
 
+def paged_list(request: Request, response: Response, items: list, limit: Optional[int], offset: int) -> list:
+    """R15 for a list built in Python rather than in SQL: the same page, headers and next link as
+    paged()."""
+    total = len(items)
+    response.headers["X-Total-Count"] = str(total)
+    if limit is not None and offset + limit < total:
+        nxt = request.url.include_query_params(limit=limit, offset=offset + limit)
+        response.headers["Link"] = f'<{nxt.path}?{nxt.query}>; rel="next"'
+    return items[offset:offset + limit] if limit is not None else items[offset:]
+
+
 @app.get(f"{API}/health", response_model=Health, tags=["service"])
 def health() -> dict:
     rows("SELECT 1")
@@ -188,12 +199,16 @@ def version() -> dict:
     return {"version": VERSION, "revision": REVISION}
 
 
-@app.get(f"{API}/adif/releases", response_model=list[Release], tags=["adif"])
-def releases() -> list[dict]:
-    """Every ADIF version loaded, with the SHA-256 of the adif.org file it was loaded from."""
-    return rows(
-        "SELECT adif_version, status, released, source_url, source_sha256 FROM adif.release ORDER BY adif_version"
-    )
+@app.get(f"{API}/adif/releases", response_model=list[Release], tags=["adif"], responses=PAGED)
+def releases(request: Request, response: Response, limit: Optional[int] = LimitParam,
+             offset: int = OffsetParam) -> list[dict]:
+    """Every ADIF version loaded, oldest first, with the SHA-256 of the adif.org file it was loaded
+    from. Paged per R15."""
+    # Ordered as version numbers, not text: as text, 3.1.10 would sort before 3.1.9.
+    base = ("SELECT adif_version, status, released, source_url, source_sha256, "
+            "string_to_array(adif_version, '.')::int[] AS version_order FROM adif.release")
+    data, _ = paged(request, response, base, (), [], ["version_order"], limit, offset, None)
+    return data
 
 
 @app.get(f"{API}/adif/current", response_model=Current, tags=["adif"])
@@ -345,17 +360,22 @@ def source_file(table: str) -> str:
     return f"enumerations_{table}.json"
 
 
-@app.get(f"{API}/adif/enumerations", response_model=list[EnumerationSummary], tags=["adif"])
-def enumerations(adif_version: Optional[str] = VersionParam) -> list[dict]:
-    """Every ADIF enumeration, with its record count for the version (25 for ADIF 3.1.x), its
-    canonical route segment (`table`) and the file ADIF publishes it as."""
+@app.get(f"{API}/adif/enumerations", response_model=list[EnumerationSummary], tags=["adif"], responses=PAGED)
+def enumerations(request: Request, response: Response, adif_version: Optional[str] = VersionParam,
+                 limit: Optional[int] = LimitParam, offset: int = OffsetParam) -> list[dict]:
+    """The ADIF enumerations the version publishes (25 for ADIF 3.1.x), each with its record count,
+    its canonical route segment (`table`) and the file ADIF publishes it as. Paged per R15."""
     v = version_or_current(adif_version)
     out = []
     for name, t in enumeration_tables().items():
         c = rows(sql.SQL("SELECT count(*) AS n, count(*) FILTER (WHERE import_only) AS io FROM adif.{} "
                          "WHERE adif_version = %s").format(sql.Identifier(t)), (v,))[0]
+        # The tables hold every loaded version side by side. One with no records for this version is
+        # an enumeration a later ADIF release added: it is not part of this version (#63).
+        if c["n"] == 0:
+            continue
         out.append({"name": name, "table": t, "file": source_file(t), "records": c["n"], "import_only_records": c["io"]})
-    return sorted(out, key=lambda e: e["name"].lower())
+    return paged_list(request, response, sorted(out, key=lambda e: e["name"].lower()), limit, offset)
 
 
 _RESERVED = {"adif_version", "limit", "offset", "q"}
