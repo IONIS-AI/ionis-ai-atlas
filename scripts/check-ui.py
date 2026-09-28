@@ -329,6 +329,18 @@ async def main():
             check(not mislabelled and f"ADIF {other}" in after and only_new not in after.replace(only_new.lower(), ""),
                   f"version {first} -> {other}: {only_new} ({first} only) never shown under ADIF {other}")
 
+        # 14c. A filter a curated view doesn't support is refused, never shown as applied (#62).
+        bands_n = int(api("/adif/bands?limit=1")[1]["X-Total-Count"])
+        await pg.goto(f"{BASE}/adif/enumerations/band?f.no_such=x")
+        await settle()
+        msg = await pg.locator("main").inner_text()
+        if await pg.get_by_role("button", name="Clear filters").count():
+            await pg.get_by_role("button", name="Clear filters").first.click()
+            await settle()
+        check("no_such" in msg and "applied" not in msg and f"of {bands_n}" not in msg and "f." not in pg.url
+              and (await count()).startswith(f"1–{bands_n} of {bands_n}"),
+              f"band?f.no_such=x is refused with a reason, and Clear filters restores all {bands_n} bands")
+
         # 15. A failing API is shown as unavailable, never as a zero count (#51). Its own context: the
         #     browser logs the 500s it is made to see, which are not errors of the page.
         broken = await b.new_context(viewport={"width": 1440, "height": 900})

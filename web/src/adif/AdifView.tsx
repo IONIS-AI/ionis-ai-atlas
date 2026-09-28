@@ -9,6 +9,7 @@
 // entity code (choices from the API's distinct values), a frequency on bands, a data type on fields.
 // In the URL each is f.<API parameter>, and it goes to the API as that parameter.
 import { useEffect, useState, type ReactNode } from "react";
+import { invalidFilter } from "./filters";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { DEFAULT_SIZE, PAGE_SIZES, pageCount, rangeOf, readPaging } from "../lib/paging";
@@ -135,6 +136,7 @@ export function AdifView({ view, version }: { view: string; version: string }) {
   const filters = readFilters(params);
   const filterKey = JSON.stringify(filters);
   const narrowed = Boolean(q) || Object.keys(filters).length > 0;
+  const invalid = invalidFilter(view, filters);
   // A result remembers the request it answered, and the page is labelled from that, never from the
   // URL of a request still in flight: switching 3.1.7 -> 3.1.6 must not show 3.1.7's rows as 3.1.6's
   // (#60). A result for another view or ADIF version is not shown at all.
@@ -166,6 +168,7 @@ export function AdifView({ view, version }: { view: string; version: string }) {
   }, [draft]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (invalid) return;  // nothing to ask the API: the page says what's wrong instead
     let live = true;
     setLoading(true);
     const asked = { view, version, q, filters, offset: (page - 1) * size };
@@ -204,6 +207,15 @@ export function AdifView({ view, version }: { view: string; version: string }) {
     if (!loading && page > last) go(last);
   }, [loading, page, last]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (invalid) {
+    return (
+      <section>
+        <p className="state error">{invalid}</p>
+        <p><button type="button" onClick={() => update({ ...Object.fromEntries(Object.keys(filters).map((k) => [`f.${k}`, null])), page: null })}>
+          Clear filters</button></p>
+      </section>
+    );
+  }
   if (failed) return <p className="state error">Nothing to show: ADIF {version} has no table “{view}”, or the API did not answer.</p>;
   if (shown === null) return <p className="state">Loading ADIF {version}…</p>;
 
