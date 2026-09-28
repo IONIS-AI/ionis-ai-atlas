@@ -63,6 +63,16 @@ KEYDIR="$(cd "$(dirname "$0")/../keys" && pwd)"
 if [ "${CHANNEL:-dev}" = prod ]; then PUB="$KEYDIR/ki7mt-images.pub"; else PUB="$KEYDIR/ki7mt-images-dev.pub"; fi
 check "app image is signed by ki7mt"         'verify_signed "${CHANNEL:-dev}" "$PUB" "$APP"'
 check "db image is signed by ki7mt"          'verify_signed "${CHANNEL:-dev}" "$PUB" "$DB"'
+# The stream tag must be a NAME ON THE SAME DIGEST, not a separate build (#58). If it resolved to
+# anything else it would be an unsigned-by-this-check artefact that compose.yaml points users at.
+if [ "$CHANNEL" = prod ]; then
+  stream="${SHA%.*}"; [ "${SHA%%.*}" = 0 ] || stream="${SHA%%.*}"
+  digest_of() { $ENGINE buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}' 2>/dev/null; }
+  check "app :$stream is the same digest as :$SHA" \
+    '[ -n "$(digest_of "docker.io/$NAMESPACE/ionis-ai-atlas:$stream")" ] && [ "$(digest_of "docker.io/$NAMESPACE/ionis-ai-atlas:$stream")" = "$(digest_of "$APP")" ]'
+  check "db :$stream is the same digest as :$SHA" \
+    '[ -n "$(digest_of "docker.io/$NAMESPACE/ionis-ai-atlas-db:$stream")" ] && [ "$(digest_of "docker.io/$NAMESPACE/ionis-ai-atlas-db:$stream")" = "$(digest_of "$DB")" ]'
+fi
 if ! out="$("${COMPOSE[@]}" up -d 2>&1)"; then   # say why, rather than exiting silently under set -e
   echo "verify-pull: compose up failed:"; grep -v '^\s*$' <<<"$out" | tail -5 | sed 's/^/    /'; exit 1
 fi
