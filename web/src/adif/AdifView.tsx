@@ -26,6 +26,9 @@ type Loaded = {
   columns: string[]; // the table's columns, for a generic view's filters; empty for curated views
 };
 type Filters = Record<string, string>;   // API parameter -> value
+/** A loaded page and the request it answered (#60). */
+type Shown = Loaded & { view: string; version: string; q: string; filters: Filters; offset: number };
+type Failed = { failed: true; view: string; version: string };
 
 const FLAGS: Record<string, [string, string]> = {  // column -> [label when true, label when false]
   deleted: ["deleted", "not deleted"],
@@ -132,7 +135,10 @@ export function AdifView({ view, version }: { view: string; version: string }) {
   const filters = readFilters(params);
   const filterKey = JSON.stringify(filters);
   const narrowed = Boolean(q) || Object.keys(filters).length > 0;
-  const [state, setState] = useState<Loaded | "error" | null>(null);
+  // A result remembers the request it answered, and the page is labelled from that, never from the
+  // URL of a request still in flight: switching 3.1.7 -> 3.1.6 must not show 3.1.7's rows as 3.1.6's
+  // (#60). A result for another view or ADIF version is not shown at all.
+  const [state, setState] = useState<Shown | Failed | null>(null);
   const [entities, setEntities] = useState<Record<string, string>>({});  // DXCC code -> name
   const [loading, setLoading] = useState(true);
   const [all, setAll] = useState<number | null>(null);  // rows before the search, to say what it left out
@@ -162,11 +168,15 @@ export function AdifView({ view, version }: { view: string; version: string }) {
   useEffect(() => {
     let live = true;
     setLoading(true);
-    load(view, version, size, (page - 1) * size, q || undefined, filters)
-      .then((r) => { if (!live) return; setState(r); setLoading(false); if (!narrowed) setAll(r.total); })
-      .catch(() => { if (live) { setState("error"); setLoading(false); } });
+    const asked = { view, version, q, filters, offset: (page - 1) * size };
+    load(view, version, size, asked.offset, q || undefined, filters)
+      .then((r) => { if (!live) return; setState({ ...r, ...asked }); setLoading(false); if (!narrowed) setAll(r.total); })
+      .catch(() => { if (live) { setState({ failed: true, view, version }); setLoading(false); } });
     return () => { live = false; };
   }, [view, version, page, size, q, filterKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The unnarrowed total belongs to one view and version too.
+  useEffect(() => setAll(null), [view, version]);
 
   // With a search or filter on, one row asked for without them gives the total they narrowed from.
   useEffect(() => {
@@ -177,7 +187,9 @@ export function AdifView({ view, version }: { view: string; version: string }) {
   }, [view, version, narrowed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Entity names, for the entity filter and for saying what it narrowed to.
-  const hasEntity = state !== null && state !== "error" && state.columns.includes(ENTITY);
+  const shown = state && !("failed" in state) && state.view === view && state.version === version ? state : null;
+  const failed = state && "failed" in state && state.view === view && state.version === version;
+  const hasEntity = shown !== null && shown.columns.includes(ENTITY);
   useEffect(() => {
     if (!hasEntity) return;
     let live = true;
@@ -187,31 +199,32 @@ export function AdifView({ view, version }: { view: string; version: string }) {
   }, [hasEntity, version]);
 
   // A search can leave the page number past the end; bring it back to the last page.
-  const last = state && state !== "error" ? pageCount(state.total, size) : 1;
+  const last = shown ? pageCount(shown.total, size) : 1;
   useEffect(() => {
     if (!loading && page > last) go(last);
   }, [loading, page, last]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (state === "error") return <p className="state error">Nothing to show: ADIF {version} has no table “{view}”, or the API did not answer.</p>;
-  if (state === null) return <p className="state">Loading ADIF {version}…</p>;
+  if (failed) return <p className="state error">Nothing to show: ADIF {version} has no table “{view}”, or the API did not answer.</p>;
+  if (shown === null) return <p className="state">Loading ADIF {version}…</p>;
 
   const pages = last;
-  const offset = (page - 1) * size;
+  // What is on screen is labelled by the request that produced it (see `state` above).
+  const offset = shown.offset;
 
   return (
     <section>
-      <h1>{state.label}</h1>
+      <h1>{shown.label}</h1>
       <p className="source">
-        <code>{state.adifName}</code> · <span>{state.file}</span> ·{" "}
-        <a href={`${state.route}?adif_version=${version}&limit=${size}`}>GET {state.route}</a>
+        <code>{shown.adifName}</code> · <span>{shown.file}</span> ·{" "}
+        <a href={`${shown.route}?adif_version=${shown.version}&limit=${size}`}>GET {shown.route}</a>
       </p>
-      <p className="lead">{state.lead}</p>
+      <p className="lead">{shown.lead}</p>
       <div className="controls">
-        <input type="search" value={draft} placeholder={`Search ${state.label}`} aria-label={`Search ${state.label}`}
+        <input type="search" value={draft} placeholder={`Search ${shown.label}`} aria-label={`Search ${shown.label}`}
           onChange={(e) => setDraft(e.target.value)} />
         <span className="count">
-          {rangeOf(offset, state.rows.length, state.total)}
-          {narrowed ? <> {describe(q, filters, entities)}{all !== null ? ` · ${all.toLocaleString("en-US")} in all` : ""}</> : null} · ADIF {version}
+          {rangeOf(offset, shown.rows.length, shown.total)}
+          {shown.q || Object.keys(shown.filters).length ? <> {describe(shown.q, shown.filters, entities)}{all !== null ? ` · ${all.toLocaleString("en-US")} in all` : ""}</> : null} · ADIF {shown.version}
         </span>
         <label className="size">Rows
           <select value={size} onChange={(e) => update({ size: Number(e.target.value) === DEFAULT_SIZE ? null : e.target.value, page: null })}>
@@ -219,18 +232,18 @@ export function AdifView({ view, version }: { view: string; version: string }) {
           </select>
         </label>
       </div>
-      <FilterControls view={view} version={version} columns={state.columns} filters={filters} entities={entities}
+      <FilterControls view={view} version={version} columns={shown.columns} filters={filters} entities={entities}
         set={(k, v) => update({ [`f.${k}`]: v, page: null })}
         clear={() => update({ ...Object.fromEntries(Object.keys(filters).map((k) => [`f.${k}`, null])), q: null, page: null })} />
-      {state.rows.length === 0 ? (
-        <p className="state">Nothing in {state.label} (ADIF {version}) {describe(q, filters, entities)}.</p>
+      {shown.rows.length === 0 ? (
+        <p className="state">Nothing in {shown.label} (ADIF {shown.version}) {describe(shown.q, shown.filters, entities)}.</p>
       ) : (
         <div className={`tablewrap${loading ? " loading" : ""}`} aria-busy={loading}>
           <table>
-            <thead><tr>{state.cols.map((c, i) => <th key={i} className={c.num ? "num" : ""}>{c.head}</th>)}</tr></thead>
+            <thead><tr>{shown.cols.map((c, i) => <th key={i} className={c.num ? "num" : ""}>{c.head}</th>)}</tr></thead>
             <tbody>
-              {state.rows.map((r, i) => (
-                <tr key={i}>{state.cols.map((c, j) => <td key={j} className={c.num ? "num" : ""}>{c.cell(r)}</td>)}</tr>
+              {shown.rows.map((r, i) => (
+                <tr key={i}>{shown.cols.map((c, j) => <td key={j} className={c.num ? "num" : ""}>{c.cell(r)}</td>)}</tr>
               ))}
             </tbody>
           </table>

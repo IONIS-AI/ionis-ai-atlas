@@ -296,6 +296,39 @@ async def main():
         c = await count()
         check(c.startswith(f"1–{min(100, enums)} of {n(enums)}") and "of type Enumeration" in c, f"fields by type: {c!r}")
 
+        # 14b. Switching ADIF version never shows one version's rows as another's (#60). A mode that
+        #      exists only in the newer version is searched, then the older version's request is held
+        #      back: while it's in flight the page may say Loading, but must not label the newer
+        #      version's row with the older version.
+        only_new = None
+        if len(versions) > 1:
+            old_modes = {m["mode"] for m in api(f"/adif/modes?adif_version={other}&limit=1000")[0]}
+            new_only = [m["mode"] for m in api(f"/adif/modes?adif_version={first}&limit=1000")[0] if m["mode"] not in old_modes]
+            only_new = new_only[0] if new_only else None
+        if only_new is None:
+            skip("version switch shows no rows of the previous version (#60)",
+                 one_version if len(versions) < 2 else f"no mode in {first} is missing from {other}")
+        else:
+            await pg.goto(f"{BASE}/adif/enumerations/mode?v={first}&q={only_new.lower()}")
+            await settle()
+            gate = asyncio.Event()
+            async def hold_old(route):
+                if f"adif_version={other}" in route.request.url:
+                    await gate.wait()
+                await route.continue_()
+            await pg.route("**/api/v1/adif/modes?*", hold_old)
+            await pg.locator(".sidebar select").select_option(other)
+            await pg.wait_for_timeout(400)
+            main_text = await pg.locator("main").inner_text()
+            mislabelled = only_new in main_text and f"ADIF {other}" in main_text
+            gate.set()
+            await pg.wait_for_timeout(600)
+            await settle()
+            after = await pg.locator("main").inner_text()
+            await pg.unroute("**/api/v1/adif/modes?*")
+            check(not mislabelled and f"ADIF {other}" in after and only_new not in after.replace(only_new.lower(), ""),
+                  f"version {first} -> {other}: {only_new} ({first} only) never shown under ADIF {other}")
+
         # 15. A failing API is shown as unavailable, never as a zero count (#51). Its own context: the
         #     browser logs the 500s it is made to see, which are not errors of the page.
         broken = await b.new_context(viewport={"width": 1440, "height": 900})
