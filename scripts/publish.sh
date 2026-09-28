@@ -76,6 +76,8 @@ case "$CHANNEL" in
   *)    die "CHANNEL must be dev or prod, not $CHANNEL" ;;
 esac
 VERSION_ARGS=(--build-arg "ATLAS_VERSION=${VERSION:-$SHA}" --build-arg "ATLAS_REVISION=$(git rev-parse HEAD)")
+
+. scripts/version-lib.sh     # stream_of(): the stream rule, defined once
 command -v docker >/dev/null && docker buildx version >/dev/null 2>&1 \
   || die "needs Docker with buildx: run this on the M3 (Docker Desktop)"
 # The capability that matters is emulation of the other architecture, which Docker Desktop has built
@@ -166,6 +168,7 @@ done
 #
 # A failure before the final step therefore leaves only a staging tag to clean up, and no
 # user-facing tag was ever created.
+SIGNED_DIGESTS=()
 for kind in "${KINDS[@]}"; do
   read -r repo tag <<<"$(ref_for "$kind")"
   staging="_staging-$tag"
@@ -185,6 +188,7 @@ for kind in "${KINDS[@]}"; do
 
   digest="$(docker buildx imagetools inspect "$stage_ref" --format '{{.Manifest.Digest}}')"
   [ -n "$digest" ] || { drop_staging; die "could not read the index digest of $stage_ref"; }
+  SIGNED_DIGESTS+=("$digest")   # for the dry run's cleanup: cosign parks a signature at sha256-<hex>.sig
 
   # One signature on the multi-arch index covers both architectures, and the SBOM and provenance
   # with them: the index lists those manifests by digest, so altering one changes the index digest
@@ -197,20 +201,39 @@ for kind in "${KINDS[@]}"; do
   sign_digest "$sign_channel" "docker.io/$NAMESPACE/$repo@$digest" \
     || { drop_staging; die "signing failed for $kind; nothing user-facing was created"; }
 
-  # prod also moves :latest, so compose.yaml can default to it and never name a version. Both tags
-  # are the same already-signed digest.
-  latest=(); [ "$CHANNEL" = prod ] && latest=(-t "docker.io/$NAMESPACE/$repo:latest")
-  docker buildx imagetools create -t "$ref" "${latest[@]}" "docker.io/$NAMESPACE/$repo@$digest" >/dev/null
+  # prod also publishes the STREAM tag (#58) and moves :latest. All three are names on the ONE
+  # index digest signed above -- cosign signatures are digest-scoped, so a tag created from that
+  # digest is signed from the instant it exists and needs no second signing step.
+  #
+  # The stream tag is built by substituting the stream for the version in whatever shape this
+  # channel's tag has, so the dry run exercises the real path: prod tags 0.1.4 -> 0.1, and the dry
+  # run's app-0.0.0-dryrun -> app-0.0 against the throwaway repository.
+  extra=()
+  if [ "$CHANNEL" = prod ]; then
+    stream_tag="${tag/%${VERSION:-$SHA}/$(stream_of "${VERSION:-$SHA}")}"
+    extra=(-t "docker.io/$NAMESPACE/$repo:$stream_tag" -t "docker.io/$NAMESPACE/$repo:latest")
+  fi
+  docker buildx imagetools create -t "$ref" ${extra[@]+"${extra[@]}"} "docker.io/$NAMESPACE/$repo@$digest" >/dev/null
   drop_staging
-  echo "publish: pushed $ref ($PLATFORMS), signed"
+  echo "publish: pushed $ref${stream_tag:+, stream :$stream_tag} ($PLATFORMS), signed"
 done
 if [ "$DRYRUN" = 1 ]; then
   # Delete the TAGS, not the repository. Repository deletion on Hub is asynchronous: the repo sits
   # in pending_delete, the registry then grants no scope on it, and the next dry run fails to push.
   # Keeping one repository and clearing its tags makes the dry run repeatable back to back.
+  # Every tag the run created, not just the exact one: a stream or :latest left behind is state
+  # carried into the next rehearsal, and repeatability back to back is the point of the dry run.
+  dryrun_tags=(latest)
   for kind in "${KINDS[@]}"; do
+    dryrun_tags+=("$kind-$VERSION" "$kind-$(stream_of "$VERSION")")
+  done
+  # ...and the signatures. cosign parks one at sha256-<hex>.sig beside the image, which is a tag
+  # like any other: left alone it accumulates two more on every rehearsal, forever. Only ever here,
+  # under DRYRUN, against the throwaway repository -- a release signature must outlive the run.
+  for d in ${SIGNED_DIGESTS[@]+"${SIGNED_DIGESTS[@]}"}; do dryrun_tags+=("${d/:/-}.sig"); done
+  for t in "${dryrun_tags[@]}"; do
     hub -o /dev/null -X DELETE \
-      "https://hub.docker.com/v2/namespaces/$NAMESPACE/repositories/$DRYRUN_REPO/tags/$kind-$VERSION" || true
+      "https://hub.docker.com/v2/namespaces/$NAMESPACE/repositories/$DRYRUN_REPO/tags/$t" || true
   done
   echo "publish: DRYRUN passed; cleared the $NAMESPACE/$DRYRUN_REPO tags it pushed"
 elif [ "$CHANNEL" = prod ]; then
