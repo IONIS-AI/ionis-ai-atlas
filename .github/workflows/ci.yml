@@ -1,0 +1,119 @@
+# CI — every pull request and every push to main runs the full test suite, and keeps the evidence
+# (ionis-ai-atlas#53). Until this existed the suites that gate a merge ran only on an agent's
+# machine, and a reviewer had to take the result on trust.
+#
+# It runs what a developer runs, through the same Makefile targets, so CI and a local run cannot
+# drift: the two images built from this commit, the API tests against a fresh engine, the front-end
+# tests, the stack brought up, then check-ui and check-browser in headless Chromium. The job fails
+# on any failure; its exit code is the gate.
+#
+# The evidence is kept whatever the result: JUnit reports (pytest, vitest), check-ui and
+# check-browser output, a Playwright trace of check-ui (plus a screenshot on failure), container
+# logs, and the image IDs and ADIF versions under test.
+#
+# GitHub-hosted runners only: this repository is public, and a self-hosted runner on a public
+# repository can be taken over by a fork's pull request. Actions are pinned by commit. The job
+# needs no secrets.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ENGINE: docker
+      TAG: ci
+      PY: python
+      EVIDENCE: ${{ github.workspace }}/evidence
+      # ADIF's pinned resource zips, reused between runs so the job doesn't depend on adif.org.
+      ATLAS_ADIF_CACHE: ${{ github.workspace }}/.adif-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97   # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020   # v7.0.0
+        with:
+          node-version: "22"
+
+      - name: Cache ADIF's resource zips (keyed on the pins)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
+        with:
+          path: .adif-cache
+          key: adif-${{ hashFiles('db/load/adif_upstream_sha256.json') }}
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --quiet -r api/requirements.txt -r api/requirements-test.txt uv
+          (cd web && npm ci --no-audit --no-fund)
+          # check-ui and check-browser run through `uv run --with playwright`; install its browser.
+          uv run --with playwright playwright install --with-deps chromium
+          mkdir -p "$EVIDENCE"
+
+      - name: Build the two images from this commit
+        run: make images
+
+      - name: Front-end tests (vitest)
+        run: cd web && npx vitest run --reporter=default --reporter=junit --outputFile.junit="$EVIDENCE/vitest.xml"
+
+      - name: API tests against a fresh engine (pytest)
+        env:
+          PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/evidence/pytest.xml
+        run: make test
+
+      - name: Bring the stack up
+        run: |
+          make up
+          for i in $(seq 120); do curl -sf http://127.0.0.1:8080/api/v1/health >/dev/null && exit 0; sleep 2; done
+          echo "the stack did not become healthy"; exit 1
+
+      - name: check-ui (headless Chromium)
+        env:
+          CHECK_UI_EVIDENCE: ${{ github.workspace }}/evidence
+        run: make check-ui 2>&1 | tee "$EVIDENCE/check-ui.txt"; exit "${PIPESTATUS[0]}"
+
+      - name: check-browser (headless Chromium, CSP)
+        run: make check-browser 2>&1 | tee "$EVIDENCE/check-browser.txt"; exit "${PIPESTATUS[0]}"
+
+      - name: Record what was tested
+        if: always()
+        run: |
+          {
+            echo "commit: $GITHUB_SHA"
+            for i in ionis-ai-atlas ionis-ai-atlas-db; do
+              echo "image localhost/$i:$TAG: $(docker image inspect --format '{{.Id}}' "localhost/$i:$TAG" 2>/dev/null || echo 'not built')"
+            done
+            echo "ADIF loaded: $(curl -sf http://127.0.0.1:8080/api/v1/adif/releases | python -c 'import json,sys;print(", ".join(r["adif_version"] for r in json.load(sys.stdin)))' 2>/dev/null || echo 'stack not up')"
+            echo "ADIF current: $(curl -sf http://127.0.0.1:8080/api/v1/adif/current | python -c 'import json,sys;print(json.load(sys.stdin)["adif_version"])' 2>/dev/null || echo 'stack not up')"
+          } > "$EVIDENCE/tested.txt"
+          cat "$EVIDENCE/tested.txt"
+          ATLAS_APP_IMAGE=localhost/ionis-ai-atlas:$TAG ATLAS_DB_IMAGE=localhost/ionis-ai-atlas-db:$TAG \
+            docker compose logs --no-color > "$EVIDENCE/containers.log" 2>&1 || true
+
+      - name: Keep the evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a   # v7.0.1
+        with:
+          name: ci-evidence-${{ github.run_number }}
+          path: evidence/
+          retention-days: 30
+
+      - name: Stop the stack
+        if: always()
+        run: make down || true
