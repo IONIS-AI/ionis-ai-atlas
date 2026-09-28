@@ -283,7 +283,7 @@ function describe(q: string, filters: Filters, entities: Record<string, string>)
       : k === "freq_mhz" ? `containing ${v} MHz`
       : k === "data_type" ? `of type ${v}`
       : `${k} = ${v}`);
-  return [q ? `matching “${q}”` : "", ...parts].filter(Boolean).join(", ");
+  return [q ? `matches “${q}”` : "", ...parts].filter(Boolean).join(", ");
 }
 
 type FilterProps = {
