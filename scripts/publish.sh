@@ -77,16 +77,7 @@ case "$CHANNEL" in
 esac
 VERSION_ARGS=(--build-arg "ATLAS_VERSION=${VERSION:-$SHA}" --build-arg "ATLAS_REVISION=$(git rev-parse HEAD)")
 
-# stream_of <x.y.z> -> the stream that release belongs to (#58). Semver's own compatibility rule,
-# written once so no release is a judgement call: while the major is 0 the MINOR is the breaking
-# boundary, so the stream is major.minor (0.1.4 -> 0.1); from 1.0.0 the MAJOR is, so it is the
-# major alone (1.4.2 -> 1). A stream tag names the newest release in its stream and moves; it is
-# not a pin. To pin, name the exact version through ATLAS_APP_IMAGE / ATLAS_DB_IMAGE.
-stream_of() {
-  local v="$1" major rest minor
-  major="${v%%.*}"; rest="${v#*.}"; minor="${rest%%.*}"
-  if [ "$major" = 0 ]; then echo "$major.$minor"; else echo "$major"; fi
-}
+. scripts/version-lib.sh     # stream_of(): the stream rule, defined once
 command -v docker >/dev/null && docker buildx version >/dev/null 2>&1 \
   || die "needs Docker with buildx: run this on the M3 (Docker Desktop)"
 # The capability that matters is emulation of the other architecture, which Docker Desktop has built

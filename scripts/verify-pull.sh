@@ -34,6 +34,7 @@ fi
 # Outside the branch: BOTH channels verify signatures. Sourced inside the dev arm, prod reached the
 # checks with verify_signed undefined and reported "command not found" as a failed signature --
 # a broken check reading as a bad release, on the channel that matters most.
+. scripts/version-lib.sh      # stream_of(): the stream rule, defined once
 . scripts/sign-lib.sh         # verify_signed
 URL=http://127.0.0.1:8080
 PROJECT=atlas-verify
@@ -66,12 +67,30 @@ check "db image is signed by ki7mt"          'verify_signed "${CHANNEL:-dev}" "$
 # The stream tag must be a NAME ON THE SAME DIGEST, not a separate build (#58). If it resolved to
 # anything else it would be an unsigned-by-this-check artefact that compose.yaml points users at.
 if [ "$CHANNEL" = prod ]; then
-  stream="${SHA%.*}"; [ "${SHA%%.*}" = 0 ] || stream="${SHA%%.*}"
-  digest_of() { $ENGINE buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}' 2>/dev/null; }
-  check "app :$stream is the same digest as :$SHA" \
-    '[ -n "$(digest_of "docker.io/$NAMESPACE/ionis-ai-atlas:$stream")" ] && [ "$(digest_of "docker.io/$NAMESPACE/ionis-ai-atlas:$stream")" = "$(digest_of "$APP")" ]'
-  check "db :$stream is the same digest as :$SHA" \
-    '[ -n "$(digest_of "docker.io/$NAMESPACE/ionis-ai-atlas-db:$stream")" ] && [ "$(digest_of "docker.io/$NAMESPACE/ionis-ai-atlas-db:$stream")" = "$(digest_of "$DB")" ]'
+  stream="$(stream_of "$SHA")"
+  # Asked of the REGISTRY, not of an engine. `podman buildx imagetools inspect` has no --format, and
+  # this script prefers podman when it is installed, so an engine-based lookup returned nothing and
+  # failed a correct release on every Linux host with podman -- passing only on a Docker-only Mac.
+  # HEAD on the manifest also costs no pull against Docker Hub's rate limit.
+  digest_of() {   # <namespace/repo> <tag> -> index digest, empty if the tag does not exist
+    local tok
+    tok="$(curl -fsS "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$1:pull" \
+      | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')" || return 1
+    # -fsI, not -fsS: a tag that does not exist is a 404 this function REPORTS by returning empty,
+    # not an error to print. -S would put "curl: (56) ... 404" above the check's own FAIL line.
+    curl -fsI -H "Authorization: Bearer $tok" \
+      -H "Accept: application/vnd.oci.image.index.v1+json" \
+      -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+      "https://registry-1.docker.io/v2/$1/manifests/$2" \
+      | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'
+  }
+  same_digest() {  # <repo> — the stream tag must be a NAME ON the exact release's digest
+    local exact stream_d
+    exact="$(digest_of "$1" "$SHA")"; stream_d="$(digest_of "$1" "$stream")"
+    [ -n "$exact" ] && [ -n "$stream_d" ] && [ "$exact" = "$stream_d" ]
+  }
+  check "app :$stream is the same digest as :$SHA" 'same_digest "$NAMESPACE/ionis-ai-atlas"'
+  check "db :$stream is the same digest as :$SHA"  'same_digest "$NAMESPACE/ionis-ai-atlas-db"'
 fi
 if ! out="$("${COMPOSE[@]}" up -d 2>&1)"; then   # say why, rather than exiting silently under set -e
   echo "verify-pull: compose up failed:"; grep -v '^\s*$' <<<"$out" | tail -5 | sed 's/^/    /'; exit 1
