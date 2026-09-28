@@ -32,9 +32,13 @@ openapi:
 	$(PY) scripts/gen-openapi.py
 	cd web && npm run -s gen:api
 
+# podman writes OCI images by default, and podman ignores HEALTHCHECK in OCI format; Docker writes
+# docker format already and has no --format flag. So the flag is podman's alone.
+FORMAT := $(if $(filter podman,$(ENGINE)),--format docker,)
+
 images: check-vendor
-	$(ENGINE) build --format docker -t localhost/ionis-ai-atlas-db:$(TAG) -f db/Containerfile db
-	$(ENGINE) build --format docker -t localhost/ionis-ai-atlas:$(TAG) -f Containerfile .
+	$(ENGINE) build $(FORMAT) -t localhost/ionis-ai-atlas-db:$(TAG) -f db/Containerfile db
+	$(ENGINE) build $(FORMAT) -t localhost/ionis-ai-atlas:$(TAG) -f Containerfile .
 
 test:
 	cd web && npm run -s test

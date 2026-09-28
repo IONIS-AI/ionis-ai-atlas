@@ -10,9 +10,13 @@ expected totals are read from the API first; the API's own numbers are checked a
 published files by the API tests.
 
     make check-ui BASE=http://localhost:8080     (the stack must be up: make dev or make up)
+
+CHECK_UI_EVIDENCE=<dir> also keeps what a failure needs to be diagnosed without re-running it
+(#53): a Playwright trace of the main page (`playwright show-trace`), and on failure a screenshot.
 """
 import asyncio
 import json
+import os
 import sys
 import urllib.request
 
@@ -47,6 +51,10 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch()
         pg = await b.new_page(viewport={"width": 1440, "height": 900})
+        evidence = os.environ.get("CHECK_UI_EVIDENCE")
+        if evidence:
+            os.makedirs(evidence, exist_ok=True)
+            await pg.context.tracing.start(screenshots=True, snapshots=True, sources=False)
         errors = []
         pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
         pg.on("pageerror", lambda e: errors.append(str(e)))
@@ -376,6 +384,10 @@ async def main():
             await flaky.close()
 
         check(not errors, f"no console errors ({errors[:3]})")
+        if evidence:
+            if fails:
+                await pg.screenshot(path=os.path.join(evidence, "check-ui-failure.png"), full_page=True)
+            await pg.context.tracing.stop(path=os.path.join(evidence, "check-ui-trace.zip"))
         await b.close()
     print("\n".join(notes + skips + fails))
     print(f"\n{len(notes)} passed, {len(fails)} failed, {len(skips)} skipped")
