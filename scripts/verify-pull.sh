@@ -74,8 +74,12 @@ if [ "$CHANNEL" = prod ]; then
   # HEAD on the manifest also costs no pull against Docker Hub's rate limit.
   digest_of() {   # <namespace/repo> <tag> -> index digest, empty if the tag does not exist
     local tok
-    tok="$(curl -fsS "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$1:pull" \
-      | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')" || return 1
+    # 2>/dev/null on the parse too: if the token request fails, python gets an empty stdin and
+    # prints a JSONDecodeError traceback before exiting. `|| return 1` already reports the failure;
+    # the traceback only buries the check's own FAIL line, which is what a reader needs to see.
+    tok="$(curl -fsS "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$1:pull" 2>/dev/null \
+      | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])' 2>/dev/null)" || return 1
+    [ -n "$tok" ] || return 1
     # -fsI, not -fsS: a tag that does not exist is a 404 this function REPORTS by returning empty,
     # not an error to print. -S would put "curl: (56) ... 404" above the check's own FAIL line.
     curl -fsI -H "Authorization: Bearer $tok" \
@@ -92,6 +96,21 @@ if [ "$CHANNEL" = prod ]; then
   check "app :$stream is the same digest as :$SHA" 'same_digest "$NAMESPACE/ionis-ai-atlas"'
   check "db :$stream is the same digest as :$SHA"  'same_digest "$NAMESPACE/ionis-ai-atlas-db"'
 fi
+# NOTHING STARTS UNTIL EVERYTHING ABOVE HAS PASSED (#57).
+#
+# The checks above only counted a failure and execution carried on, so an image whose signature did
+# not verify was STARTED anyway and the script reported the failure afterwards -- having already run
+# what it had just found unverifiable. SIGNING.md says verify-pull "refuses an unsigned image before
+# it starts the stack"; it did not.
+#
+# Gated on the running `fails` count rather than on the two signature checks by name, so every check
+# that precedes `compose up` is covered -- the signatures, the stream-tag digests (#58), and
+# anything added above this line later, without remembering to extend a list.
+if [ "$fails" -gt 0 ]; then
+  echo "verify-pull: FAIL ($fails) — refusing to start images that failed verification"
+  exit 1
+fi
+
 if ! out="$("${COMPOSE[@]}" up -d 2>&1)"; then   # say why, rather than exiting silently under set -e
   echo "verify-pull: compose up failed:"; grep -v '^\s*$' <<<"$out" | tail -5 | sed 's/^/    /'; exit 1
 fi
