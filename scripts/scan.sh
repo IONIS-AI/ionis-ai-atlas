@@ -70,7 +70,10 @@ for image in "$@"; do
 
   if [ -n "${SARIF_DIR:-}" ]; then
     mkdir -p "$SARIF_DIR"
-    trivy image --quiet --scanners vuln "${THRESHOLD[@]}" --format sarif -o "/work/$name.sarif" "${source[@]}"
+    # The report pass never decides the verdict (the pass above did), so it must not fail on findings:
+    # --exit-code 0 says so rather than leaning on Trivy's default. A report of findings is exactly
+    # what the nightly workflow uploads (#61). A scanner that fails to run still stops the script.
+    trivy image --quiet --scanners vuln "${THRESHOLD[@]}" --exit-code 0 --format sarif -o "/work/$name.sarif" "${source[@]}"
     cp "$WORK/$name.sarif" "$SARIF_DIR/$name-${PLATFORM//\//-}.sarif"
   fi
   rm -f "$WORK/$name.tar"
