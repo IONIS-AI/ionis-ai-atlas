@@ -17,12 +17,19 @@ You need Docker (or podman) and the `compose.yaml` file from a release. Nothing 
 no login, no clone.
 
 ```
-curl -O https://raw.githubusercontent.com/IONIS-AI/ionis-ai-atlas/v0.1.0/compose.yaml
+curl -O https://raw.githubusercontent.com/IONIS-AI/ionis-ai-atlas/v0.1.5/compose.yaml
 docker compose up          # or: podman compose up
 ```
-then open <http://localhost:8080>. To upgrade, fetch the new release's `compose.yaml` and run it again. The API's interactive documentation is at <http://localhost:8080/api/docs>.
+then open <http://localhost:8080>.
 
-Images on docker.io, all under `ki7mt`, public, tagged by release version: `ki7mt/ionis-ai-atlas` (the app),
+**Upgrading works like a Linux distribution's release stream.** The compose file names the `0.1`
+stream, so `docker compose pull && docker compose up -d` brings you the newest 0.1.x release: fixes
+and new features, never a breaking change. A breaking change starts a new stream (0.2, later 1),
+and you move to it on purpose by fetching that release's `compose.yaml`. To pin an exact version
+instead, set `ATLAS_APP_IMAGE=docker.io/ki7mt/ionis-ai-atlas:0.1.5` and
+`ATLAS_DB_IMAGE=docker.io/ki7mt/ionis-ai-atlas-db:0.1.5` in a `.env` file beside `compose.yaml`. The API's interactive documentation is at <http://localhost:8080/api/docs>.
+
+Images on docker.io, all under `ki7mt`, public, tagged by exact version, stream and `latest`: `ki7mt/ionis-ai-atlas` (the app),
 `ki7mt/ionis-ai-atlas-db` (the engine) and one `ki7mt/ionis-ai-atlas-data-<dataset>` per dataset.
 Development builds go to one private repository, `ki7mt/ionis-ai-atlas-dev`, with the image kind in
 the tag (`app-<sha>`, `db-<sha>`).

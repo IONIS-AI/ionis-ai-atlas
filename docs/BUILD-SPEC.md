@@ -119,7 +119,7 @@ section is what Atlas needs from it.
 ```yaml
 services:
   atlas:
-    image: ki7mt/ionis-ai-atlas:<version>
+    image: ki7mt/ionis-ai-atlas:<stream>
     ports: ["127.0.0.1:8080:8080"]
     environment:
       ATLAS_DB_URL: postgresql://atlas_ro@db:5432/ionis
@@ -127,7 +127,7 @@ services:
     volumes:
       - ./mylogs:/data/personal:ro                   # optional: your own ADIF (R13)
   db:
-    image: ki7mt/ionis-ai-atlas-db:<version>
+    image: ki7mt/ionis-ai-atlas-db:<stream>
     volumes: [pgdata:/var/lib/pgsql/17/data]
   data-wspr:                                         # one service per dataset
     image: ki7mt/ionis-ai-atlas-data-wspr:<version>
@@ -138,7 +138,31 @@ volumes:
 ```
 
 `docker compose up`, then `http://localhost:8080`. That is the whole install, on Docker Desktop or
-Docker Engine. Every image is pinned to an exact version in the published compose file.
+Docker Engine.
+
+**Release streams** (the project owner, 2026-09-28; IONIS-AI/ionis-ai-atlas#58). The published
+compose file names each image by its **release stream**, the way a Linux distribution does: a
+Rocky 9 system gets every Rocky 9 update from `dnf upgrade`, and moves to Rocky 10 only when its
+owner chooses.
+
+- **What a stream is.** While a version's major number is 0, the stream is `major.minor` (`0.1`
+  for 0.1.0, 0.1.1, 0.1.2…), because before 1.0 the minor number is where breaking changes go. From
+  1.0 on, the stream is the major number (`1` for 1.0.0, 1.4.2…). This is semantic versioning's own
+  rule, stated here once so it is never inferred per release.
+- **Every release publishes three tags on one signed image**: the exact version (`:0.1.5`), its
+  stream (`:0.1`) and `:latest`. They name the same index digest, so the one signature covers all
+  three (see SIGNING.md).
+- **What a stream tag guarantees**: the newest release in that stream, and no breaking change
+  within it. A user on `:0.1` gets fixes and additive features from `docker compose pull`.
+- **What it does not guarantee**: that the same tag names the same image tomorrow. A stream tag
+  moves; it is not a pin. **To pin, name the exact version**, as Atlas's own deployments do
+  through the compose file's image variables (`ATLAS_APP_IMAGE`, `ATLAS_DB_IMAGE`).
+- **A breaking change starts a new stream** (`0.2`, later `1`). Users move to it deliberately by
+  fetching that release's compose file, whose release notes say what changed.
+- **`:latest` is never named by the compose file**, because it crosses streams, and so crosses
+  breaking changes, without warning.
+- **ADIF is unaffected.** ADIF versions are data inside the engine, which only ever adds them
+  (R17); no image tag changes which ADIF version a user sees.
 
 **Three kinds of image, versioned independently**, because they change at different rates:
 
@@ -163,8 +187,9 @@ updating after the first run. Therefore nothing is trusted to arrive that way:
   version differs from the volume's, the engine rebuilds it from the reference data and the data
   images rather than attempting an in-place upgrade.
 
-The result is that a pull followed by `docker compose up` always serves exactly what the pinned
-images contain, and a user never deletes a volume by hand.
+The result is that a pull followed by `docker compose up` always serves exactly what the stream's
+newest images contain (or, when pinned, what the exact versions contain), and a user never deletes a
+volume by hand.
 
 **Application and data version independently.** The application declares which collection schema
 versions it can read, and says so plainly when handed one it cannot.
