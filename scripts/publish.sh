@@ -177,6 +177,7 @@ done
 #
 # A failure before the final step therefore leaves only a staging tag to clean up, and no
 # user-facing tag was ever created.
+SIGNED_DIGESTS=()
 for kind in "${KINDS[@]}"; do
   read -r repo tag <<<"$(ref_for "$kind")"
   staging="_staging-$tag"
@@ -196,6 +197,7 @@ for kind in "${KINDS[@]}"; do
 
   digest="$(docker buildx imagetools inspect "$stage_ref" --format '{{.Manifest.Digest}}')"
   [ -n "$digest" ] || { drop_staging; die "could not read the index digest of $stage_ref"; }
+  SIGNED_DIGESTS+=("$digest")   # for the dry run's cleanup: cosign parks a signature at sha256-<hex>.sig
 
   # One signature on the multi-arch index covers both architectures, and the SBOM and provenance
   # with them: the index lists those manifests by digest, so altering one changes the index digest
@@ -230,11 +232,17 @@ if [ "$DRYRUN" = 1 ]; then
   # Keeping one repository and clearing its tags makes the dry run repeatable back to back.
   # Every tag the run created, not just the exact one: a stream or :latest left behind is state
   # carried into the next rehearsal, and repeatability back to back is the point of the dry run.
+  dryrun_tags=(latest)
   for kind in "${KINDS[@]}"; do
-    for t in "$kind-$VERSION" "$kind-$(stream_of "$VERSION")" latest; do
-      hub -o /dev/null -X DELETE \
-        "https://hub.docker.com/v2/namespaces/$NAMESPACE/repositories/$DRYRUN_REPO/tags/$t" || true
-    done
+    dryrun_tags+=("$kind-$VERSION" "$kind-$(stream_of "$VERSION")")
+  done
+  # ...and the signatures. cosign parks one at sha256-<hex>.sig beside the image, which is a tag
+  # like any other: left alone it accumulates two more on every rehearsal, forever. Only ever here,
+  # under DRYRUN, against the throwaway repository -- a release signature must outlive the run.
+  for d in ${SIGNED_DIGESTS[@]+"${SIGNED_DIGESTS[@]}"}; do dryrun_tags+=("${d/:/-}.sig"); done
+  for t in "${dryrun_tags[@]}"; do
+    hub -o /dev/null -X DELETE \
+      "https://hub.docker.com/v2/namespaces/$NAMESPACE/repositories/$DRYRUN_REPO/tags/$t" || true
   done
   echo "publish: DRYRUN passed; cleared the $NAMESPACE/$DRYRUN_REPO tags it pushed"
 elif [ "$CHANNEL" = prod ]; then
