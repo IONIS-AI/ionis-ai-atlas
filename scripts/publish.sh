@@ -132,6 +132,11 @@ done
 # built with --load first, scanned locally, and only then is the combined multi-arch image pushed.
 # The second build reuses the builder's cache, so the push costs a fraction of the first build.
 #
+# The scan build takes --no-cache: the Containerfiles' `dnf upgrade` line never changes, so a cached
+# layer would keep yesterday's packages, and --pull refreshes only the base image (ionis-ai-atlas#78:
+# a rebuild kept expat and gdb-gdbserver at the vulnerable versions until the cache was skipped).
+# The push build then reuses this fresh layer, so what is pushed is what was scanned.
+#
 # scan.sh's exit codes: 0 pass, 1 fixable HIGH/CRITICAL, 2 the scanner did not run. 2 stops the
 # publish exactly like 1 — a scanner that did not run is not a pass.
 scan_local() {                     # $1 = kind, $2 = context dir
@@ -140,7 +145,7 @@ scan_local() {                     # $1 = kind, $2 = context dir
     arch="${plat##*/}"
     scan_tag="localhost/atlas-scan-$kind:$arch"
     echo "publish: building $kind for $plat to scan it"
-    docker buildx build --builder "$BUILDER" --platform "$plat" --pull --load \
+    docker buildx build --builder "$BUILDER" --platform "$plat" --pull --no-cache --load \
       "${VERSION_ARGS[@]}" \
       -t "$scan_tag" -f "$ctx/Containerfile" "$ctx" >/dev/null
     rc=0; ENGINE=docker scripts/scan.sh "$scan_tag" || rc=$?
