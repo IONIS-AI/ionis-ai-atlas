@@ -1,5 +1,6 @@
 # IONIS-AI Atlas — build, test and run the two images locally.
 #   make images      build ionis-ai-atlas and ionis-ai-atlas-db (docker format keeps HEALTHCHECK)
+#                    fresh packages by default (no cache); FRESH=0 reuses the cache
 #   make test        API tests against a fresh database container, plus the front-end tests
 #   make up / down   run the stack from the local images (http://127.0.0.1:8080)
 #   make dev         Docker (Desktop): build both images from this checkout and run them; after a
@@ -36,9 +37,15 @@ openapi:
 # docker format already and has no --format flag. So the flag is podman's alone.
 FORMAT := $(if $(filter podman,$(ENGINE)),--format docker,)
 
+# The Containerfiles' `dnf upgrade` line never changes, so a cached layer keeps old packages and
+# `make scan` fails on CVEs already fixed upstream (ionis-ai-atlas#78). So `images` builds fresh by
+# default; FRESH=0 reuses the cache for a quick local iteration.
+FRESH ?= 1
+NOCACHE := $(if $(filter 0,$(FRESH)),,--no-cache --pull)
+
 images: check-vendor
-	$(ENGINE) build $(FORMAT) -t localhost/ionis-ai-atlas-db:$(TAG) -f db/Containerfile db
-	$(ENGINE) build $(FORMAT) -t localhost/ionis-ai-atlas:$(TAG) -f Containerfile .
+	$(ENGINE) build $(FORMAT) $(NOCACHE) -t localhost/ionis-ai-atlas-db:$(TAG) -f db/Containerfile db
+	$(ENGINE) build $(FORMAT) $(NOCACHE) -t localhost/ionis-ai-atlas:$(TAG) -f Containerfile .
 
 test:
 	cd web && npm run -s test
